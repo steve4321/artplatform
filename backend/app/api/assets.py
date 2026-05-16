@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
-from app.models import Asset, AssetVersion
+from app.models import Asset, AssetVersion, User
 from app.schemas.asset import (
     AssetCreate,
     AssetListResponse,
@@ -252,6 +253,7 @@ async def download_version(
 async def deprecate_asset(
     asset_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(require_role("admin")),
 ) -> AssetResponse:
     """Soft-delete an asset by setting state to deprecated."""
     asset = await _load_asset_or_404(db, asset_id)
@@ -266,3 +268,57 @@ async def deprecate_asset(
     await db.refresh(asset)
     asset = await _load_asset_or_404(db, asset.id)
     return AssetResponse.model_validate(asset)
+
+
+# ── Export routes ─────────────────────────────────────────────────────────
+
+
+@router.get("/{asset_id}/export/unity")
+async def export_unity(
+    asset_id: UUID,
+    version: int = Query(..., description="Asset version to export"),
+    db: Annotated[AsyncSession, Depends(get_db)] = ...,
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    from app.services.export_service import ExportService
+
+    svc = ExportService()
+    try:
+        url = await svc.export_as_unity_package(asset_id, version, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {"url": url, "format": "unity_zip"}
+
+
+@router.get("/{asset_id}/export/glb")
+async def export_glb(
+    asset_id: UUID,
+    version: int = Query(..., description="Asset version to export"),
+    db: Annotated[AsyncSession, Depends(get_db)] = ...,
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    from app.services.export_service import ExportService
+
+    svc = ExportService()
+    try:
+        url = await svc.export_as_glb(asset_id, version, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {"url": url, "format": "glb"}
+
+
+@router.get("/{asset_id}/export/fbx")
+async def export_fbx(
+    asset_id: UUID,
+    version: int = Query(..., description="Asset version to export"),
+    db: Annotated[AsyncSession, Depends(get_db)] = ...,
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    from app.services.export_service import ExportService
+
+    svc = ExportService()
+    try:
+        url = await svc.export_as_fbx(asset_id, version, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {"url": url, "format": "fbx"}
