@@ -1,0 +1,31 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Sidebar from './components/layout/Sidebar';
+import TopBar from './components/layout/TopBar';
+import DashboardPage from './pages/DashboardPage';
+import GeneratePage from './pages/GeneratePage';
+import AssetsPage from './pages/AssetsPage';
+import ReviewsPage from './pages/ReviewsPage';
+import SettingsPage from './pages/SettingsPage';
+
+function App() {
+  return (
+    <div className="flex h-screen bg-gray-950">
+      <Sidebar />
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <TopBar />
+        <main className="flex-1 overflow-y-auto p-6 bg-gray-950">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/generate" element={<GeneratePage />} />
+            <Route path="/assets" element={<AssetsPage />} />
+            <Route path="/reviews" element={<ReviewsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default App;
