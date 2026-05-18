@@ -54,8 +54,8 @@ else:
         {"stage": "image_to_3d", "processor_name": "triposr"},
         {"stage": "mesh_cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rigging", "processor_name": "rigify"},
-        {"stage": "animation", "processor_name": "hy_motion"},
+        {"stage": "rig", "processor_name": "rigify"},
+        {"stage": "animate", "processor_name": "hy_motion_self_hosted"},
     ]
 
 
