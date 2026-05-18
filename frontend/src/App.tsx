@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
@@ -6,8 +7,10 @@ import GeneratePage from './pages/GeneratePage';
 import AssetsPage from './pages/AssetsPage';
 import ReviewsPage from './pages/ReviewsPage';
 import SettingsPage from './pages/SettingsPage';
+import LoginPage from './pages/LoginPage';
+import { useAuthStore } from './stores/authStore';
 
-function App() {
+function AppLayout() {
   return (
     <div className="flex h-screen bg-gray-950">
       <Sidebar />
@@ -25,6 +28,36 @@ function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+function App() {
+  const [isInitialized, setIsInitialized] = useState(false);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  useEffect(() => {
+    useAuthStore.getState().initializeAuth().finally(() => setIsInitialized(true));
+  }, []);
+
+  if (!isInitialized) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+      />
+      <Route
+        path="/*"
+        element={isAuthenticated ? <AppLayout /> : <Navigate to="/login" replace />}
+      />
+    </Routes>
   );
 }
 

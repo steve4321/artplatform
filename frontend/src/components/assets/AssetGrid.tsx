@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useMemo } from 'react';
-import { Asset } from '../../stores/assetStore';
+import type { Asset } from '../../types';
 import { AssetCard } from './AssetCard';
 
 interface AssetGridProps {

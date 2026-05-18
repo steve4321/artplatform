@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AssetType, State } from '../../stores/assetStore';
+import type { AssetType, State } from '../../types';
 
 interface AssetFiltersProps {
   search: string;

@@ -11,6 +11,35 @@ function AssetDetailModal({
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'preview' | 'details'>('preview');
+  const { getDownloadUrl, submitForReview } = useAssetStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const latestVersion = asset.versions?.length > 0
+    ? asset.versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
+    : null;
+
+  const previewUrl = latestVersion
+    ? getDownloadUrl(asset.id, latestVersion.version)
+    : null;
+
+  const handleSubmitForReview = async () => {
+    setIsSubmitting(true);
+    try {
+      await submitForReview(asset.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to submit for review:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (latestVersion) {
+      const url = getDownloadUrl(asset.id, latestVersion.version);
+      window.open(url, '_blank');
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -77,8 +106,8 @@ function AssetDetailModal({
         <div className="flex-1 overflow-hidden">
           {activeTab === 'preview' ? (
             <div className="h-full p-4">
-              {asset.fileUrl ? (
-                <AssetViewer modelUrl={asset.fileUrl} className="w-full h-full" autoPlay />
+              {previewUrl ? (
+                <AssetViewer modelUrl={previewUrl} className="w-full h-full" autoPlay />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-600">
                   <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,33 +156,55 @@ function AssetDetailModal({
                         })}
                       </span>
                     </div>
+                    {latestVersion && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Version</span>
+                        <span className="text-gray-200">v{latestVersion.version}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Metadata</h4>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    {Object.keys(asset.metadata).length > 0 ? (
-                      <pre className="text-xs text-gray-400 overflow-x-auto">
-                        {JSON.stringify(asset.metadata, null, 2)}
-                      </pre>
-                    ) : (
-                      <p className="text-gray-500 text-sm">No metadata available</p>
-                    )}
-                  </div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Versions</h4>
+                  {asset.versions && asset.versions.length > 0 ? (
+                    <div className="space-y-2">
+                      {asset.versions.slice().reverse().map((v) => (
+                        <div key={v.id} className="bg-gray-800 rounded-lg p-3 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-200">v{v.version}</span>
+                            <span className="text-gray-500">{v.fileFormat}</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {v.fileSizeBytes ? `${Math.round(v.fileSizeBytes / 1024 / 1024)} MB` : 'Unknown size'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">No versions available</p>
+                  )}
                 </div>
               </div>
 
               <div className="mt-8 flex gap-3">
-                <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                <button
+                  onClick={handleDownload}
+                  disabled={!latestVersion}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                >
                   Download
                 </button>
                 <button className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium rounded-lg transition-colors">
                   Edit
                 </button>
                 {asset.state === 'draft' && (
-                  <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors">
-                    Submit for Review
+                  <button
+                    onClick={handleSubmitForReview}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit for Review'}
                   </button>
                 )}
               </div>
@@ -177,10 +228,16 @@ export default function AssetsPage() {
     setFilters,
     setPage,
     resetFilters,
+    createAsset,
+    uploadVersion,
   } = useAssetStore();
 
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadName, setUploadName] = useState('');
+  const [uploadType, setUploadType] = useState<'model_3d' | 'texture_2d' | 'animation' | 'material'>('model_3d');
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     fetchAssets();
@@ -214,6 +271,36 @@ export default function AssetsPage() {
   const handleCloseDetail = useCallback(() => {
     setSelectedAsset(null);
   }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadFile(file);
+      if (!uploadName) {
+        setUploadName(file.name.replace(/\.[^/.]+$/, ''));
+      }
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile || !uploadName) return;
+    setIsUploading(true);
+    try {
+      const asset = await createAsset({
+        name: uploadName,
+        assetType: uploadType,
+      });
+      await uploadVersion(asset.id, uploadFile);
+      await fetchAssets();
+      setUploadDialogOpen(false);
+      setUploadFile(null);
+      setUploadName('');
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -275,20 +362,43 @@ export default function AssetsPage() {
                 </svg>
               </button>
             </div>
-            <div className="p-6">
-              <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center hover:border-gray-600 transition-colors">
-                <svg className="w-12 h-12 text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                  />
-                </svg>
-                <p className="text-gray-300">
-                  <span className="text-blue-400 font-medium cursor-pointer">Click to upload</span> or drag and drop
-                </p>
-                <p className="text-gray-500 text-sm mt-1">GLB, GLTF, FBX, OBJ, PNG, JPG (max 100MB)</p>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Asset Name</label>
+                <input
+                  type="text"
+                  value={uploadName}
+                  onChange={(e) => setUploadName(e.target.value)}
+                  placeholder="My 3D Model"
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:outline-none focus:border-blue-600"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Asset Type</label>
+                <select
+                  value={uploadType}
+                  onChange={(e) => setUploadType(e.target.value as typeof uploadType)}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:outline-none focus:border-blue-600"
+                >
+                  <option value="model_3d">3D Model</option>
+                  <option value="texture_2d">Texture</option>
+                  <option value="animation">Animation</option>
+                  <option value="material">Material</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">File</label>
+                <input
+                  type="file"
+                  accept=".glb,.gltf,.fbx,.obj,.png,.jpg,.jpeg"
+                  onChange={handleFileSelect}
+                  className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:hover:bg-blue-700 file:cursor-pointer"
+                />
+                {uploadFile && (
+                  <p className="mt-2 text-sm text-gray-400">
+                    Selected: {uploadFile.name} ({(uploadFile.size / 1024 / 1024).toFixed(2)} MB)
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800 bg-gray-900/50">
@@ -298,8 +408,12 @@ export default function AssetsPage() {
               >
                 Cancel
               </button>
-              <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
-                Upload
+              <button
+                onClick={handleUpload}
+                disabled={!uploadFile || !uploadName || isUploading}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              >
+                {isUploading ? 'Uploading...' : 'Upload'}
               </button>
             </div>
           </div>

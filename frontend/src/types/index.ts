@@ -1,49 +1,98 @@
-export type AssetType = 'model_3d' | 'texture_2d' | 'animation' | 'material';
-export type Source = 'generated' | 'uploaded' | 'imported';
-export type State = 'draft' | 'processing' | 'review' | 'approved' | 'published' | 'deprecated' | 'rejected';
-export type PipelineStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type StepStatus = 'pending' | 'running' | 'completed' | 'failed';
+export interface User {
+  id: string;
+  teamId: string | null;
+  email: string;
+  displayName: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string | null;
+}
+
+export interface UserBrief {
+  id: string;
+  displayName: string;
+  email: string;
+}
+
+export interface AssetVersion {
+  id: string;
+  assetId: string;
+  version: number;
+  storageKey: string;
+  storageKeyThumbnail: string | null;
+  fileFormat: string;
+  fileSizeBytes: number | null;
+  checksumSha256: string | null;
+  sourceType: string;
+  pipelineRunId: string | null;
+  createdAt: string;
+}
+
+export interface AssetDependency {
+  dependentAssetId: string;
+  dependencyAssetId: string;
+  dependencyType: string;
+}
 
 export interface Asset {
   id: string;
+  teamId: string;
   name: string;
-  assetType: AssetType;
-  source: Source;
-  state: State;
+  description: string;
+  assetType: string;
+  source: string;
+  state: string;
+  currentVersion: number;
+  parentAssetId: string | null;
+  metadata: Record<string, unknown>;
+  tags: string[];
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
-  fileUrl: string | null;
-  thumbnailUrl: string | null;
-  metadata: Record<string, unknown>;
+  versions: AssetVersion[];
+  dependencies: AssetDependency[];
+  createdByUser: UserBrief | null;
 }
 
 export interface PipelineStep {
   id: string;
+  pipelineRunId: string;
+  stageOrder: number;
   stage: string;
-  status: StepStatus;
+  processorName: string;
+  status: string;
+  inputArtifactIds: string[];
+  outputArtifactIds: string[];
+  config: Record<string, unknown>;
+  durationMs: number | null;
+  errorMessage: string | null;
   startedAt: string | null;
   completedAt: string | null;
-  error: string | null;
-  outputUrl?: string | null;
-  durationMs?: number;
 }
 
 export interface PipelineRun {
   id: string;
+  assetId: string;
   prompt: string;
-  status: PipelineStatus;
-  steps: PipelineStep[];
+  referenceImageKey: string | null;
+  status: string;
+  config: Record<string, unknown>;
+  totalStages: number | null;
+  completedStages: number;
   createdAt: string;
   completedAt: string | null;
-  error: string | null;
+  steps: PipelineStep[];
 }
 
-export interface User {
+export interface Review {
   id: string;
-  email: string;
-  name: string;
-  role: string;
-  createdAt: string;
+  assetId: string;
+  version: number;
+  reviewerId: string;
+  decision: string;
+  notes: string | null;
+  reviewedAt: string;
+  reviewer: UserBrief | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -51,8 +100,17 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   pageSize: number;
-  totalPages: number;
 }
+
+export function getLatestVersionDownloadUrl(assetId: string, version: number): string {
+  return `/api/v1/assets/${assetId}/versions/${version}/download`;
+}
+
+export type AssetType = 'model_3d' | 'texture_2d' | 'animation' | 'material' | 'sprite';
+export type Source = 'ai_generated' | 'manual_upload' | 'hybrid';
+export type State = 'draft' | 'processing' | 'review' | 'approved' | 'rejected' | 'published' | 'deprecated';
+export type PipelineStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
 export type StylePreset = 'realistic' | 'anime' | 'cartoon' | 'fantasy' | 'sci-fi';
 export type QualityLevel = 'draft' | 'standard' | 'high';
@@ -69,7 +127,7 @@ export interface StageInfo {
   id: string;
   name: string;
   icon: string;
-  status: StepStatus;
+  status: string;
   duration?: number;
   error?: string | null;
   outputUrl?: string | null;

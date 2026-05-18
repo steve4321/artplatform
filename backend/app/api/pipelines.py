@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 from uuid import UUID
 
@@ -24,14 +25,26 @@ from app.schemas.pipeline import (
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
 
-PIPELINE_STAGES = [
-    {"stage": "text_to_image", "processor_name": "sdxl"},
-    {"stage": "image_to_3d", "processor_name": "tripo_sr"},
-    {"stage": "mesh_cleanup", "processor_name": "instant_meshes"},
-    {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-    {"stage": "rigging", "processor_name": "rigify"},
-    {"stage": "animation", "processor_name": "hy_motion"},
-]
+MOCK_MODE = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
+
+if MOCK_MODE:
+    PIPELINE_STAGES = [
+        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
+        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
+        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
+        {"stage": "rig", "processor_name": "rigify_mock"},
+        {"stage": "animate", "processor_name": "hy_motion_mock"},
+    ]
+else:
+    PIPELINE_STAGES = [
+        {"stage": "text_to_image", "processor_name": "sdxl"},
+        {"stage": "image_to_3d", "processor_name": "tripo_sr"},
+        {"stage": "mesh_cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+        {"stage": "rigging", "processor_name": "rigify"},
+        {"stage": "animation", "processor_name": "hy_motion"},
+    ]
 
 
 @router.post("", response_model=PipelineResponse, status_code=status.HTTP_201_CREATED)
@@ -97,6 +110,13 @@ async def create_pipeline(
         db.add(step)
 
     await db.commit()
+
+    if MOCK_MODE:
+        from app.workers import ensure_processors_registered
+        from app.pipeline.runner import run_pipeline
+
+        ensure_processors_registered()
+        run_pipeline.delay(str(pipeline.id))
 
     stmt = (
         select(PipelineRun)

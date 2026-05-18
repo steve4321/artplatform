@@ -53,8 +53,8 @@ class PipelineStepResponse(BaseModel):
     stage: str
     processor_name: str
     status: StepStatus
-    input_artifact_ids: list[UUID] = Field(default_factory=list)
-    output_artifact_ids: list[UUID] = Field(default_factory=list)
+    input_artifact_ids: list[str] = Field(default_factory=list)
+    output_artifact_ids: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     duration_ms: int | None = None
     error_message: str | None = None

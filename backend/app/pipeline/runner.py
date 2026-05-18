@@ -3,12 +3,13 @@ import os
 import tempfile
 import time
 import uuid
+from uuid import UUID
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
-from app.core.storage import MinioStorage
+from app.core.storage import MinioStorage, get_storage
 from app.models.pipeline import PipelineRun, PipelineStep
 from app.pipeline.registry import get_processor
 from app.workers.celery_app import celery_app
@@ -23,7 +24,10 @@ def _get_sync_engine():
     global _sync_engine
     if _sync_engine is None:
         settings = get_settings()
-        sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
+        if settings.LOCAL_DEV:
+            sync_url = settings.effective_database_url.replace("+aiosqlite", "")
+        else:
+            sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
         _sync_engine = create_engine(sync_url, echo=settings.DEBUG, pool_size=3, max_overflow=5)
     return _sync_engine
 
@@ -36,7 +40,7 @@ def _get_sync_session() -> Session:
 
 
 def _download_artifacts(
-    storage: MinioStorage, artifacts: list[dict], work_dir: str
+    storage, artifacts: list[dict], work_dir: str
 ) -> list[dict]:
     resolved = []
     for artifact in artifacts:
@@ -51,7 +55,7 @@ def _download_artifacts(
 
 
 def _upload_artifacts(
-    storage: MinioStorage, artifacts: list[dict], pipeline_run_id: str, stage: str
+    storage, artifacts: list[dict], pipeline_run_id: str, stage: str
 ) -> list[dict]:
     uploaded = []
     for artifact in artifacts:
@@ -76,10 +80,11 @@ def _upload_artifacts(
 @celery_app.task(bind=True)
 def run_pipeline(self, pipeline_run_id: str) -> None:
     session = _get_sync_session()
-    storage = MinioStorage()
+    storage = get_storage()
+    run_id = UUID(pipeline_run_id)
 
     try:
-        pipeline_run = session.get(PipelineRun, pipeline_run_id)
+        pipeline_run = session.get(PipelineRun, run_id)
         if pipeline_run is None:
             logger.error("PipelineRun %s not found", pipeline_run_id)
             return
@@ -89,7 +94,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
 
         steps = (
             session.query(PipelineStep)
-            .filter(PipelineStep.pipeline_run_id == pipeline_run_id)
+            .filter(PipelineStep.pipeline_run_id == run_id)
             .order_by(PipelineStep.stage_order)
             .all()
         )
@@ -163,7 +168,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
     except Exception:
         logger.exception("Fatal error in run_pipeline for %s", pipeline_run_id)
         try:
-            pipeline_run = session.get(PipelineRun, pipeline_run_id)
+            pipeline_run = session.get(PipelineRun, UUID(pipeline_run_id))
             if pipeline_run is not None:
                 pipeline_run.status = "failed"
                 session.commit()

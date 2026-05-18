@@ -31,10 +31,17 @@ const typeLabels: Record<string, string> = {
   texture_2d: '2D Texture',
   animation: 'Animation',
   material: 'Material',
+  sprite: 'Sprite',
 };
+
+function getThumbnailUrl(asset: Asset): string | null {
+  const latestVersion = asset.versions?.[asset.versions.length - 1];
+  return latestVersion?.storageKeyThumbnail ?? null;
+}
 
 export function AssetCard({ asset, onClick }: AssetCardProps) {
   const [imageError, setImageError] = useState(false);
+  const thumbnailUrl = getThumbnailUrl(asset);
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
@@ -47,9 +54,9 @@ export function AssetCard({ asset, onClick }: AssetCardProps) {
       className="group bg-gray-900 border border-gray-800 rounded-lg overflow-hidden cursor-pointer transition-all duration-200 hover:border-gray-700 hover:shadow-lg hover:shadow-blue-900/10 hover:-translate-y-1"
     >
       <div className="relative h-44 bg-gray-800 flex items-center justify-center overflow-hidden">
-        {asset.thumbnailUrl && !imageError ? (
+        {thumbnailUrl && !imageError ? (
           <img
-            src={asset.thumbnailUrl}
+            src={thumbnailUrl}
             alt={asset.name}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             onError={() => setImageError(true)}

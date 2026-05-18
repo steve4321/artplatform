@@ -91,7 +91,7 @@ function PipelineTimeline({
           const step = steps[index];
           const status = step?.status || 'pending';
           const duration = step?.durationMs;
-          const error = step?.error;
+          const error = step?.errorMessage;
           const isSelected = selectedIndex === index;
           const isClickable = status === 'completed' || status === 'failed';
 
