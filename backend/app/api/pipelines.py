@@ -25,9 +25,10 @@ from app.schemas.pipeline import (
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
 
-MOCK_MODE = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
+_LOCAL_DEV = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
+_PROCESSOR_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
 
-if MOCK_MODE:
+if _LOCAL_DEV or _PROCESSOR_MODE == "mock":
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl_mock"},
         {"stage": "image_to_3d", "processor_name": "triposr_mock"},
@@ -36,10 +37,21 @@ if MOCK_MODE:
         {"stage": "rig", "processor_name": "rigify_mock"},
         {"stage": "animate", "processor_name": "hy_motion_mock"},
     ]
+elif _PROCESSOR_MODE == "cloud":
+    # Cloud API mode — GPU stages via ProviderRouter, CPU stages run locally
+    PIPELINE_STAGES = [
+        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
+        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+        {"stage": "rig", "processor_name": "rigify"},
+        {"stage": "animate", "processor_name": "hy_motion"},
+    ]
 else:
+    # _PROCESSOR_MODE == "local": self-hosted GPU inference
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl"},
-        {"stage": "image_to_3d", "processor_name": "tripo_sr"},
+        {"stage": "image_to_3d", "processor_name": "triposr"},
         {"stage": "mesh_cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
         {"stage": "rigging", "processor_name": "rigify"},

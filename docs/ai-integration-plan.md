@@ -12,6 +12,66 @@
 2. **处理器隔离**：每个阶段一个独立 `PipelineProcessor` 实现，符合 `app/pipeline/processor.py` 的 ABC 接口
 3. **统一接口**：所有处理器输入 `input_artifacts + config + output_dir`，输出 `list[dict]`，runner 负责上传
 4. **可插拔切换**：通过 `processor_name` 配置选择实现（如 `sdxl_diffusers` / `sdxl_comfyui` / `sdxl_cloud`）
+5. **Provider 抽象**：通过 `ModelProvider` ABC 解耦云 API 和自托管，换 Provider 不改 Processor 代码
+
+---
+
+## Provider 抽象架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         PipelineProcessor (ABC)                     │
+│     can_run() / run(input_artifacts, config, output_dir)          │
+└─────────────────────────────┬───────────────────────────────────────┘
+                              │ 委托给 Provider
+          ┌───────────────────┼────────────────────┐
+          ▼                   ▼                    ▼
+   ┌─────────────┐     ┌─────────────┐       ┌─────────────┐
+   │ StabilityAI │     │   fal.ai   │  ... │  Replicate  │   ← 云 API
+   └──────┬──────┘     └──────┬──────┘       └──────┬──────┘
+          │                   │                    │
+          └───────────────────┼────────────────────┘
+                              ▼
+              ┌───────────────────────────┐
+              │     ModelProvider ABC     │  ← 统一抽象
+              │  generate(params)          │
+              │  estimate_cost(params)     │
+              │  health_check()           │
+              └────────────┬──────────────┘
+                           │ 注册到 Router
+                           ▼
+              ┌───────────────────────────┐
+              │     ProviderRouter        │
+              │  primary + fallbacks 链    │
+              │  cost_priority 策略        │
+              └───────────────────────────┘
+```
+
+**核心价值**：
+- 换 AI 提供商 → 只需改环境变量，不改 Processor 代码
+- Provider 挂了 → Router 自动切换 Fallback，不影响管线
+- 新增 Provider → 实现 `ModelProvider` ABC + 注册即可用
+
+**三种运行模式**：
+
+| 模式 | 环境变量 | GPU | AI 成本 | 用途 |
+|------|---------|-----|--------|------|
+| `mock` | `PROCESSOR_MODE=mock` | 无 | ¥0 | 开发测试 |
+| `cloud` | `PROCESSOR_MODE=cloud` | 无 | 按量付费 | 初期验证 |
+| `local` | `PROCESSOR_MODE=local` | 需要 | 电费 | 生产降本 |
+
+**Provider 切换示例**：
+
+```bash
+# 换主 Provider（改一行 env）
+TEXT_TO_IMAGE_PROVIDER=fal_ai
+
+# 加 Fallback（逗号分隔）
+TEXT_TO_IMAGE_FALLBACKS=replicate,stability_ai
+
+# 成本优先路由
+PROVIDER_COST_PRIORITY=true
+```
 
 ---
 
