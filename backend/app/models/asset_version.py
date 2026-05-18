@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,7 +27,7 @@ class AssetVersion(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     asset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("assets.id", ondelete="CASCADE"),
@@ -51,7 +52,7 @@ class AssetVersion(Base):
         nullable=False,
     )
     pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     asset: Mapped["Asset"] = relationship(  # noqa: F821
         back_populates="versions", lazy="selectin",

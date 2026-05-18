@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.storage import MinioStorage, get_storage
+from app.core.storage import StorageClient, get_storage
 from app.models import Asset, AssetVersion
 
 _README_TEMPLATE = """\
@@ -42,7 +42,7 @@ Unity import steps:
 
 
 class ExportService:
-    def __init__(self, storage: MinioStorage | None = None) -> None:
+    def __init__(self, storage: StorageClient | None = None) -> None:
         self.storage = storage or get_storage()
 
     async def _fetch_asset_and_version(

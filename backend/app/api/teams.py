@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.deps import require_role
 from app.models import Team, User
 from app.schemas.team import TeamCreate, TeamListResponse, TeamResponse
 
@@ -57,6 +58,7 @@ async def list_teams(
 async def create_team(
     payload: TeamCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(require_role("admin")),
 ) -> TeamResponse:
     """Create a new team."""
     team = Team(name=payload.name)

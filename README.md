@@ -10,6 +10,23 @@
 - **3D Web Preview**: 浏览器内实时预览 3D 模型（旋转/缩放/线框/骨骼/动画）
 - **Team Collaboration**: RBAC 权限、Review 审批流
 - **Unity Ready**: 导出 FBX + 纹理，拖入 Unity 即可使用
+- **CLI**: 命令行工具，支持脚本自动化和 CI/CD 集成
+- **MCP**: Model Context Protocol 服务，AI 助手可直接调用平台能力
+
+## Quick Start (Local Dev)
+
+无需 Docker，零外部依赖：
+
+```bash
+cd backend
+cp .env.example .env   # 设置 LOCAL_DEV=true
+
+pip install -e ".[dev]"
+LOCAL_DEV=true alembic upgrade head
+LOCAL_DEV=true uvicorn app.main:app --reload
+```
+
+默认管理员: `admin@artplatform.local` / `admin123456`
 
 ## Architecture
 
@@ -22,12 +39,14 @@
 | Frontend | React + TypeScript + Tailwind |
 | 3D Preview | React Three Fiber + drei |
 | Backend | Python FastAPI |
-| Database | PostgreSQL |
-| Object Storage | MinIO / S3 |
-| Task Queue | Celery + Redis |
+| CLI | typer + rich + httpx |
+| MCP Server | mcp SDK (Python) |
+| Database | PostgreSQL / SQLite (dev) |
+| Object Storage | MinIO / S3 / Local (dev) |
+| Task Queue | Celery + Redis / Eager (dev) |
 | AI Models | SDXL, TripoSR, HY-Motion 1.0 |
 | 3D Processing | Blender (bpy), xatlas, Instant Meshes |
 
 ## Status
 
-🚧 设计阶段 — 详见 [docs/architecture.md](docs/architecture.md)
+🔨 Phase 1 开发中 — 后端 API + Auth + CRUD 已跑通，CLI + MCP 已实现

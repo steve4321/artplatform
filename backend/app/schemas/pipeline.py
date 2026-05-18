@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PipelineStatus(str, enum.Enum):
@@ -62,6 +62,15 @@ class PipelineStepResponse(BaseModel):
     completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("input_artifact_ids", "output_artifact_ids", mode="before")
+    @classmethod
+    def _coerce_json_default(cls, v: Any) -> list:
+        if isinstance(v, dict):
+            return []
+        if v is None:
+            return []
+        return list(v)
 
 
 class PipelineResponse(BaseModel):

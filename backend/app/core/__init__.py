@@ -2,10 +2,11 @@
 
 from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db, init_db, close_db
-from app.core.storage import MinioStorage, get_storage, init_storage
+from app.core.storage import LocalStorage, MinioStorage, get_storage, init_storage
 
 __all__ = [
     "Base",
+    "LocalStorage",
     "MinioStorage",
     "Settings",
     "close_db",

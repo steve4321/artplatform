@@ -8,7 +8,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -29,13 +29,6 @@ from app.schemas.asset import (
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
-DEFAULT_TEAM_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
-
-
-def _get_user_id() -> UUID:
-    return DEFAULT_USER_ID
-
 
 async def _load_asset_or_404(db: AsyncSession, asset_id: UUID) -> Asset:
     stmt = (
@@ -44,7 +37,7 @@ async def _load_asset_or_404(db: AsyncSession, asset_id: UUID) -> Asset:
         .options(
             selectinload(Asset.versions),
             selectinload(Asset.dependencies),
-            selectinload(Asset.created_by_user),
+            selectinload(Asset.creator),
         )
     )
     result = await db.execute(stmt)
@@ -57,6 +50,7 @@ async def _load_asset_or_404(db: AsyncSession, asset_id: UUID) -> Asset:
 @router.get("", response_model=AssetListResponse)
 async def list_assets(
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     state: AssetState | None = None,
@@ -69,7 +63,7 @@ async def list_assets(
     base = select(Asset).options(
         selectinload(Asset.versions),
         selectinload(Asset.dependencies),
-        selectinload(Asset.created_by_user),
+        selectinload(Asset.creator),
     )
     count_stmt = select(func.count()).select_from(Asset)
 
@@ -84,8 +78,9 @@ async def list_assets(
         count_stmt = count_stmt.where(Asset.source == source)
     if tags:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-        base = base.where(Asset.tags.contains(tag_list))
-        count_stmt = count_stmt.where(Asset.tags.contains(tag_list))
+        for tag in tag_list:
+            base = base.where(Asset.tags.cast(Text).contains(f'"{tag}"'))
+            count_stmt = count_stmt.where(Asset.tags.cast(Text).contains(f'"{tag}"'))
     if search:
         base = base.where(Asset.name.ilike(f"%{search}%"))
         count_stmt = count_stmt.where(Asset.name.ilike(f"%{search}%"))
@@ -110,11 +105,12 @@ async def list_assets(
 async def create_asset(
     payload: AssetCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User = Depends(get_current_user),
 ) -> AssetResponse:
     """Create a new asset."""
     asset = Asset(
-        team_id=DEFAULT_TEAM_ID,
-        created_by=_get_user_id(),
+        team_id=current_user.team_id,
+        created_by=current_user.id,
         name=payload.name,
         description=payload.description,
         asset_type=payload.asset_type.value,
@@ -145,6 +141,7 @@ async def update_asset(
     asset_id: UUID,
     payload: AssetUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(get_current_user),
 ) -> AssetResponse:
     """Partially update an asset."""
     asset = await _load_asset_or_404(db, asset_id)
@@ -162,6 +159,7 @@ async def transition_state(
     asset_id: UUID,
     payload: AssetStateUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(get_current_user),
 ) -> AssetResponse:
     """Transition an asset to a new lifecycle state.
 
@@ -193,6 +191,7 @@ async def upload_version(
     asset_id: UUID,
     file: Annotated[UploadFile, File(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(get_current_user),
     source_type: str = "manual_upload",
 ) -> AssetVersionResponse:
     """Upload a new file version for an asset.

@@ -1,6 +1,7 @@
 """Async SQLAlchemy engine, session factory, and declarative base."""
 
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -22,17 +23,32 @@ class Base(DeclarativeBase):
     """
 
 
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+
 def _get_engine():
     """Lazily create the async engine (singleton)."""
     global _engine  # noqa: PLW0603
     if _engine is None:
         settings = get_settings()
-        _engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=settings.DEBUG,
-            pool_size=5,
-            max_overflow=10,
-        )
+        url = settings.effective_database_url
+
+        if _is_sqlite(url):
+            db_path = Path(url.split("///")[-1])
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            _engine = create_async_engine(
+                url,
+                echo=settings.DEBUG,
+                connect_args={"check_same_thread": False},
+            )
+        else:
+            _engine = create_async_engine(
+                url,
+                echo=settings.DEBUG,
+                pool_size=5,
+                max_overflow=10,
+            )
     return _engine
 
 

@@ -3,8 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -15,11 +14,11 @@ class Team(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    settings: Mapped[dict] = mapped_column(JSONB, server_default="'{}'")
-    created_at: Mapped[datetime] = mapped_column(server_default="now()")
+    settings: Mapped[dict] = mapped_column(JSON, server_default=text("'{}'"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(  # noqa: F821
         back_populates="team", lazy="selectin",

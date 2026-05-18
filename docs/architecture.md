@@ -370,6 +370,162 @@ No `.unitypackage` generation needed for v1.
 
 ---
 
+## CLI & MCP — AI-Friendly Interfaces
+
+### Design Principle
+
+The platform exposes three interfaces: **Web UI** (human), **REST API** (programs), **CLI** (developers/scripts), and **MCP** (AI agents). All four share the same backend service layer — no duplicated logic.
+
+```
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   Web UI     │  │  REST API    │  │    CLI       │  │  MCP Server  │
+│  (React)     │  │  (FastAPI)   │  │   (typer)    │  │  (mcp SDK)   │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │                 │
+       └─────────────────┴─────────────────┴─────────────────┘
+                                  │
+                        ┌─────────▼─────────┐
+                        │   Service Layer   │
+                        │  (app/services/)  │
+                        └─────────┬─────────┘
+                                  │
+                        ┌─────────▼─────────┐
+                        │  DB + Storage     │
+                        └───────────────────┘
+```
+
+### CLI (Command Line Interface)
+
+A `typer`-based CLI for developers and automation scripts.
+
+```bash
+# Auth
+artplatform login --email admin@artplatform.local
+artplatform whoami
+
+# Assets
+artplatform assets list --state draft --type model_3d
+artplatform assets create --name "Sword" --type model_3d
+artplatform assets get <id>
+artplatform assets upload <id> ./model.glb
+artplatform assets download <id> --version 2 -o ./output/
+artplatform assets export <id> --format unity -o ./export/
+
+# Pipeline
+artplatform pipeline run --prompt "a fantasy warrior" --reference ./ref.png
+artplatform pipeline status <id> --watch
+artplatform pipeline retry <id> --from-stage 3
+
+# Reviews
+artplatform reviews submit <asset-id> --version 2 --decision approved --notes "Looks good"
+artplatform reviews list <asset-id>
+
+# Teams
+artplatform teams list
+artplatform teams create --name "Art Team"
+```
+
+**Design decisions:**
+- CLI calls the REST API via `httpx` (no direct DB access) — works against any deployed instance
+- Token stored in `~/.artplatform/credentials` (file permission 600)
+- `--output json` flag for scripting / piping to `jq`
+- Interactive TUI for pipeline status with `rich` progress bars
+
+### MCP Server (Model Context Protocol)
+
+An MCP server that exposes platform capabilities as AI-callable tools. Enables AI coding assistants (Claude, Cursor, Copilot) to directly create, manage, and export art assets.
+
+```
+AI Agent (Claude / Cursor / Copilot)
+       │
+       │  MCP Protocol (stdio / SSE)
+       ▼
+┌─────────────────────────────────┐
+│  ArtPlatform MCP Server         │
+│                                 │
+│  Tools:                         │
+│  ├── generate_3d_asset()        │
+│  ├── list_assets()              │
+│  ├── get_asset()                │
+│  ├── update_asset()             │
+│  ├── upload_asset_version()     │
+│  ├── export_asset()             │
+│  ├── submit_review()            │
+│  ├── run_pipeline()             │
+│  └── get_pipeline_status()      │
+│                                 │
+│  Resources:                     │
+│  ├── assets://recent            │
+│  └── pipelines://{id}/timeline  │
+│                                 │
+│  Prompts:                       │
+│  └── generate_asset_prompt      │
+└────────────┬────────────────────┘
+             │
+             │  Direct service calls (in-process)
+             ▼
+┌─────────────────────────────────┐
+│  FastAPI Service Layer          │
+│  (same process or remote API)   │
+└─────────────────────────────────┘
+```
+
+**Tool Definitions:**
+
+| Tool | Input | Output | Description |
+|------|-------|--------|-------------|
+| `generate_3d_asset` | `prompt`, `style?`, `reference_image_url?` | `pipeline_id` | Trigger full pipeline |
+| `list_assets` | `state?`, `type?`, `search?`, `limit?` | `asset[]` | Browse/search assets |
+| `get_asset` | `asset_id` | `asset_detail` | Full asset info with versions |
+| `update_asset` | `asset_id`, `name?`, `tags?`, `state?` | `asset` | Update metadata or state |
+| `upload_asset_version` | `asset_id`, `file_path` | `version` | Upload a file as new version |
+| `export_asset` | `asset_id`, `format` | `download_url` | Export as unity/glb/fbx |
+| `submit_review` | `asset_id`, `version`, `decision`, `notes?` | `review` | Approve/reject |
+| `run_pipeline` | `prompt`, `config?` | `pipeline_id` | Start a pipeline run |
+| `get_pipeline_status` | `pipeline_id` | `pipeline_status` | Check progress with step details |
+
+**Prompt Template — `generate_asset_prompt`:**
+
+Guides AI agents to construct effective prompts for the art pipeline, including style keywords, composition hints, and technical constraints (e.g., "low-poly game-ready", "PBR metallic-roughness workflow").
+
+**Configuration (for AI tools):**
+
+```json
+// Claude Desktop: claude_desktop_config.json
+{
+  "mcpServers": {
+    "artplatform": {
+      "command": "python",
+      "args": ["-m", "app.mcp"],
+      "env": {
+        "ARTPLATFORM_API_URL": "http://localhost:8000",
+        "ARTPLATFORM_API_KEY": "..."
+      }
+    }
+  }
+}
+
+// Cursor: .cursor/mcp.json
+{
+  "mcpServers": {
+    "artplatform": {
+      "command": "python",
+      "args": ["-m", "app.mcp"],
+      "cwd": "/path/to/artplatform/backend"
+    }
+  }
+}
+```
+
+**Design decisions:**
+- MCP server runs as a standalone Python process, communicates with backend via REST API
+- Uses `httpx` for API calls (same as CLI) — works with any deployed instance
+- No direct DB/storage access from MCP — all operations go through the same API surface
+- Authentication via API key or JWT token
+- Tool descriptions are optimized for AI comprehension (clear input/output schemas, usage examples)
+
+---
+
 ## Tech Stack
 
 | Layer | Technology | Reason |
@@ -377,6 +533,8 @@ No `.unitypackage` generation needed for v1.
 | Frontend | React + TypeScript + Tailwind | Standard |
 | 3D Preview | React Three Fiber + drei | React-native, richest ecosystem |
 | Backend | Python FastAPI | AI ecosystem is Python-native |
+| CLI | typer + rich + httpx | Type-hinted, modern, async-ready |
+| MCP Server | mcp SDK (Python) | Standard MCP protocol for AI agents |
 | Database | PostgreSQL + JSONB | Flexible metadata + relational queries |
 | Object Storage | MinIO (dev) → S3 (prod) | S3-compatible API |
 | Task Queue | Celery + Redis | GPU/CPU worker routing |
@@ -434,9 +592,18 @@ Week 5-6: Optimization
   └── Frontend caching and performance
 ```
 
-### Phase 3 — Collaboration (ongoing)
+### Phase 3 — Collaboration + AI Interfaces (ongoing)
 
 ```
+  ├── CLI (typer-based, wraps REST API)
+  │   ├── Auth (login, whoami)
+  │   ├── Asset CRUD + upload/download
+  │   ├── Pipeline run + status --watch
+  │   └── Review submit
+  ├── MCP Server (AI agent integration)
+  │   ├── 9 tools (generate, list, get, update, upload, export, review, run_pipeline, pipeline_status)
+  │   ├── Resources (recent assets, pipeline timelines)
+  │   └── Prompt template (asset prompt construction guide)
   ├── Multi-version comparison (side-by-side 3D preview)
   ├── Team permissions (ABAC by project/category)
   ├── Concept image gallery (reuse generated images)

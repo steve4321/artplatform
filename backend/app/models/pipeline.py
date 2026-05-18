@@ -3,13 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Text, Uuid
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-_RUN_STATUSES = ("running", "completed", "partial", "failed")
+_RUN_STATUSES = ("pending", "running", "completed", "partial", "failed")
 _STEP_STATUSES = ("pending", "running", "completed", "failed", "skipped")
 
 
@@ -24,7 +23,7 @@ class PipelineRun(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     asset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("assets.id", ondelete="CASCADE"),
@@ -35,12 +34,12 @@ class PipelineRun(Base):
         Text, nullable=True,
     )
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
     total_stages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed_stages: Mapped[int] = mapped_column(
         Integer, server_default="0", default=0,
     )
-    created_at: Mapped[datetime] = mapped_column(server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     asset: Mapped["Asset"] = relationship(  # noqa: F821
@@ -67,7 +66,7 @@ class PipelineStep(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     pipeline_run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
@@ -77,16 +76,16 @@ class PipelineStep(Base):
     stage: Mapped[str] = mapped_column(Text, nullable=False)
     processor_name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default="'pending'",
+        Text, nullable=False, server_default=text("'pending'"),
     )
-    input_artifact_ids: Mapped[list[uuid.UUID]] = mapped_column(
-        ARRAY(Uuid()), server_default="'{}'",
+    input_artifact_ids: Mapped[list[str]] = mapped_column(
+        JSON, server_default=text("'{}'"),
     )
-    output_artifact_ids: Mapped[list[uuid.UUID]] = mapped_column(
-        ARRAY(Uuid()), server_default="'{}'",
+    output_artifact_ids: Mapped[list[str]] = mapped_column(
+        JSON, server_default=text("'{}'"),
     )
     config: Mapped[dict | None] = mapped_column(
-        JSONB, server_default="'{}'",
+        JSON, server_default=text("'{}'"),
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

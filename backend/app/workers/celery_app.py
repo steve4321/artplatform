@@ -10,15 +10,21 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
 )
 
-celery_app.conf.update(
-    task_serializer="json",
-    result_serializer="json",
-    accept_content=["json"],
-    timezone="UTC",
-    task_track_started=True,
-    task_routes={
+conf = {
+    "task_serializer": "json",
+    "result_serializer": "json",
+    "accept_content": ["json"],
+    "timezone": "UTC",
+    "task_track_started": True,
+    "task_routes": {
         "app.pipeline.runner.run_pipeline": {"queue": "pipeline"},
         "app.workers.gpu_tasks.*": {"queue": "gpu"},
         "app.workers.cpu_tasks.*": {"queue": "cpu"},
     },
-)
+}
+
+if settings.LOCAL_DEV:
+    conf["task_always_eager"] = True
+    conf["task_eager_propagates"] = True
+
+celery_app.conf.update(conf)

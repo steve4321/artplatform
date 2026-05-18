@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AssetType(str, enum.Enum):
@@ -119,6 +119,8 @@ class AssetDependencyResponse(BaseModel):
 
 
 class AssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: UUID
     team_id: UUID
     name: str
@@ -128,7 +130,7 @@ class AssetResponse(BaseModel):
     state: AssetState
     current_version: int
     parent_asset_id: UUID | None = None
-    metadata_: dict[str, Any] = Field(default_factory=dict, alias="metadata")
+    metadata_: dict[str, Any] = Field(default_factory=dict, alias="metadata", validation_alias="metadata_")
     tags: list[str] = Field(default_factory=list)
     created_by: UUID | None = None
     created_at: datetime
@@ -136,8 +138,6 @@ class AssetResponse(BaseModel):
     versions: list[AssetVersionResponse] = Field(default_factory=list)
     dependencies: list[AssetDependencyResponse] = Field(default_factory=list)
     created_by_user: UserBrief | None = None
-
-    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class AssetListResponse(BaseModel):

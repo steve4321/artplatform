@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -22,7 +22,7 @@ class Review(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     asset_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("assets.id", ondelete="CASCADE"),
@@ -35,7 +35,7 @@ class Review(Base):
     )
     decision: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reviewed_at: Mapped[datetime] = mapped_column(server_default="now()")
+    reviewed_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     asset: Mapped["Asset"] = relationship(  # noqa: F821
         lazy="selectin",

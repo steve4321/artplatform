@@ -1,10 +1,9 @@
 """MinIO (S3-compatible) object storage client wrapper."""
 
 from datetime import timedelta
+from pathlib import Path
 from typing import Protocol
-
-from minio import Minio
-from minio.error import S3Error
+from urllib.parse import quote
 
 from app.core.config import get_settings
 
@@ -26,6 +25,8 @@ class MinioStorage:
     """
 
     def __init__(self) -> None:
+        from minio import Minio
+
         settings = get_settings()
         endpoint = settings.S3_ENDPOINT.replace("http://", "").replace("https://", "")
         self._bucket = settings.S3_BUCKET
@@ -116,16 +117,56 @@ class MinioStorage:
         self._client.remove_object(self._bucket, key)
 
 
+class LocalStorage:
+    """Filesystem-backed storage that mirrors the StorageClient interface.
+
+    Files are stored under ``backend/.local_dev/storage/<bucket>/<key>``.
+    Used when ``LOCAL_DEV=true`` so no MinIO server is needed.
+    """
+
+    def __init__(self) -> None:
+        settings = get_settings()
+        self._root = settings.local_dev_storage_dir / settings.S3_BUCKET
+
+    async def ensure_bucket(self) -> None:
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def _resolve(self, key: str) -> Path:
+        path = self._root / key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def upload_file(self, key: str, data: bytes, content_type: str) -> str:
+        path = self._resolve(key)
+        path.write_bytes(data)
+        return key
+
+    def download_file(self, key: str) -> bytes:
+        path = self._root / key
+        if not path.exists():
+            raise FileNotFoundError(f"Storage object not found: {key}")
+        return path.read_bytes()
+
+    def generate_presigned_url(self, key: str, expires: timedelta | None = None) -> str:
+        return f"/local-storage/{quote(key, safe='/')}"
+
+    def delete_file(self, key: str) -> None:
+        path = self._root / key
+        if path.exists():
+            path.unlink()
+
+
 # ── Module-level singleton helpers ────────────────────────────────────────
 
-_storage: MinioStorage | None = None
+_storage: MinioStorage | LocalStorage | None = None
 
 
-def get_storage() -> MinioStorage:
+def get_storage() -> MinioStorage | LocalStorage:
     """Return the storage singleton (created on first call)."""
     global _storage  # noqa: PLW0603
     if _storage is None:
-        _storage = MinioStorage()
+        settings = get_settings()
+        _storage = LocalStorage() if settings.LOCAL_DEV else MinioStorage()
     return _storage
 
 

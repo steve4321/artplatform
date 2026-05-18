@@ -11,12 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.deps import get_current_user
 from app.models import Asset, Review, User
 from app.schemas.review import ReviewCreate, ReviewListResponse, ReviewResponse
 
 router = APIRouter(tags=["reviews"])
-
-DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000002")
 
 
 @router.post(
@@ -27,6 +26,7 @@ DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000002")
 async def submit_review(
     payload: ReviewCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User = Depends(get_current_user),
 ) -> ReviewResponse:
     """Submit a review for an asset version.
 
@@ -48,7 +48,7 @@ async def submit_review(
     review = Review(
         asset_id=payload.asset_id,
         version=payload.version,
-        reviewer_id=DEFAULT_USER_ID,
+        reviewer_id=current_user.id,
         decision=payload.decision.value,
         notes=payload.notes,
     )

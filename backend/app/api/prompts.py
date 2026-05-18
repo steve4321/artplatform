@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
-
-from app.workers.stage_processors.image_captioning import ImageCaptioningBLIP2
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
@@ -48,6 +47,8 @@ async def generate_prompts_from_image(
         tmp_path = tmp.name
 
     try:
+        from app.workers.stage_processors.image_captioning import ImageCaptioningBLIP2
+
         processor = ImageCaptioningBLIP2()
         can_run = processor.can_run(
             [{"local_path": tmp_path, "file_format": suffix.lstrip(".")}],
@@ -72,7 +73,6 @@ async def generate_prompts_from_image(
                 detail="Captioning produced no output",
             )
 
-        import json
         with open(artifacts[0]["local_path"]) as f:
             data = json.load(f)
 

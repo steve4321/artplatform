@@ -9,9 +9,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Text,
+    func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -48,7 +50,7 @@ class Asset(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        server_default="gen_random_uuid()",
+        default=uuid.uuid4,
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("teams.id", ondelete="CASCADE"),
@@ -59,7 +61,7 @@ class Asset(Base):
     asset_type: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     state: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default="'draft'",
+        Text, nullable=False, server_default=text("'draft'"),
     )
     current_version: Mapped[int] = mapped_column(
         Integer, server_default="1", default=1,
@@ -69,18 +71,18 @@ class Asset(Base):
         nullable=True,
     )
     metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, server_default="'{}'",
+        "metadata", JSON, server_default=text("'{}'"),
     )
     tags: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), server_default="'{}'",
+        JSON, server_default=text("'{}'"),
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(server_default="now()")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        server_default="now()", onupdate=datetime.utcnow,
+        server_default=func.now(), onupdate=datetime.utcnow,
     )
 
     team: Mapped["Team"] = relationship(  # noqa: F821

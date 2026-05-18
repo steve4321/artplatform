@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 from uuid import UUID
 
@@ -12,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
-from app.models import Asset, Artifact, PipelineRun, PipelineStep
+from app.models import Asset, Artifact, PipelineRun, PipelineStep, User
 from app.schemas.asset import AssetType
 from app.schemas.pipeline import (
     PipelineCreate,
@@ -23,9 +23,6 @@ from app.schemas.pipeline import (
 )
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
-
-DEFAULT_TEAM_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 PIPELINE_STAGES = [
     {"stage": "text_to_image", "processor_name": "sdxl"},
@@ -41,6 +38,7 @@ PIPELINE_STAGES = [
 async def create_pipeline(
     payload: PipelineCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User = Depends(get_current_user),
 ) -> PipelineResponse:
     """Create a new pipeline run and queue it for execution.
 
@@ -60,8 +58,8 @@ async def create_pipeline(
             )
     else:
         asset = Asset(
-            team_id=DEFAULT_TEAM_ID,
-            created_by=DEFAULT_USER_ID,
+            team_id=current_user.team_id,
+            created_by=current_user.id,
             name=f"AI Generated — {payload.prompt[:80]}",
             description=payload.prompt,
             asset_type=AssetType.model_3d.value,
@@ -165,6 +163,7 @@ async def retry_stage(
     pipeline_id: UUID,
     stage_order: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(require_role("admin", "artist")),
 ) -> PipelineResponse:
     """Retry a pipeline from a specific stage.
 
