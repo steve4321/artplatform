@@ -30,8 +30,10 @@ function ReviewsPage() {
         await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'approved' });
       } else if (decision === 'rejected') {
         await client.delete(`/api/v1/assets/${assetId}`);
+      } else if (decision === 'changes_requested') {
+        await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'draft' });
       }
-      await fetchReviewQueue();
+      setAssets((prev) => prev.filter((a) => a.id !== assetId));
     } catch (err) {
       console.error('Failed to submit review:', err);
     } finally {
@@ -74,9 +76,18 @@ function ReviewsPage() {
           {assets.map((asset) => (
             <div key={asset.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
               <div className="flex items-start gap-4">
-                <div className="w-24 h-24 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-24 h-24 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {asset.versions && asset.versions.length > 0 ? (
-                    <span className="text-gray-500 text-xs">v{asset.currentVersion}</span>
+                    (() => {
+                      const latest = asset.versions[asset.versions.length - 1];
+                      const key = latest.storageKeyThumbnail ?? latest.storageKey;
+                      const url = key ? `/local-storage/${key}` : null;
+                      return url ? (
+                        <img src={url} alt={asset.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-gray-600 text-xs">No preview</span>
+                      );
+                    })()
                   ) : (
                     <span className="text-gray-600 text-sm">Preview</span>
                   )}

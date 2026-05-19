@@ -46,7 +46,7 @@ class VersionSourceType(str, enum.Enum):
 VALID_TRANSITIONS: dict[AssetState, set[AssetState]] = {
     AssetState.draft: {AssetState.processing, AssetState.review, AssetState.deprecated},
     AssetState.processing: {AssetState.draft, AssetState.review, AssetState.deprecated},
-    AssetState.review: {AssetState.approved, AssetState.rejected, AssetState.deprecated},
+    AssetState.review: {AssetState.approved, AssetState.rejected, AssetState.draft, AssetState.deprecated},
     AssetState.approved: {AssetState.published, AssetState.deprecated},
     AssetState.rejected: {AssetState.draft, AssetState.deprecated},
     AssetState.published: {AssetState.deprecated},
