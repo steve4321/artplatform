@@ -252,25 +252,20 @@ async def download_version(
     return {"url": url, "expires_in": "3600"}
 
 
-@router.delete("/{asset_id}", response_model=AssetResponse)
-async def deprecate_asset(
+@router.delete("/{asset_id}")
+async def delete_asset(
     asset_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     _current_user: User = Depends(require_role("admin")),
-) -> AssetResponse:
-    """Soft-delete an asset by setting state to deprecated."""
-    asset = await _load_asset_or_404(db, asset_id)
-    current = AssetState(asset.state)
-    if current == AssetState.deprecated:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Asset is already deprecated",
-        )
-    asset.state = AssetState.deprecated.value
+) -> dict[str, str]:
+    """Permanently delete an asset and all its versions."""
+    from sqlalchemy import text
+    # UUID stored in SQLite has no dashes
+    asset_id_str = str(asset_id).replace("-", "")
+    await db.execute(text("DELETE FROM asset_versions WHERE asset_id = :asset_id"), {"asset_id": asset_id_str})
+    await db.execute(text("DELETE FROM assets WHERE id = :asset_id"), {"asset_id": asset_id_str})
     await db.commit()
-    await db.refresh(asset)
-    asset = await _load_asset_or_404(db, asset.id)
-    return AssetResponse.model_validate(asset)
+    return {"deleted": str(asset_id)}
 
 
 # ── Export routes ─────────────────────────────────────────────────────────

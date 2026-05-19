@@ -126,4 +126,9 @@ export const useAssetStore = create<AssetState>((set, get) => ({
     await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'review' });
     await get().fetchAssets();
   },
+
+  deleteAsset: async (assetId: string) => {
+    await client.delete(`/api/v1/assets/${assetId}`);
+    await get().fetchAssets();
+  },
 }));

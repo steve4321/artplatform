@@ -11,8 +11,9 @@ function AssetDetailModal({
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'preview' | 'details'>('preview');
-  const { getDownloadUrl, submitForReview } = useAssetStore();
+  const { getDownloadUrl, submitForReview, deleteAsset } = useAssetStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const latestVersion = asset.versions?.length > 0
     ? asset.versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
@@ -38,6 +39,19 @@ function AssetDetailModal({
     if (latestVersion) {
       const url = getDownloadUrl(asset.id, latestVersion.version);
       window.open(url, '_blank');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Delete this asset? This cannot be undone.')) return;
+    setIsDeleting(true);
+    try {
+      await deleteAsset(asset.id);
+      onClose();
+    } catch (err) {
+      console.error('Failed to delete asset:', err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -207,6 +221,13 @@ function AssetDetailModal({
                 </button>
                 <button className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium rounded-lg transition-colors">
                   Edit
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete'}
                 </button>
                 {asset.state === 'draft' && (
                   <button

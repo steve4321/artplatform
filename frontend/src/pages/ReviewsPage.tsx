@@ -6,6 +6,7 @@ function ReviewsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
 
   const fetchReviewQueue = useCallback(async () => {
     setIsLoading(true);
@@ -76,14 +77,17 @@ function ReviewsPage() {
           {assets.map((asset) => (
             <div key={asset.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
               <div className="flex items-start gap-4">
-                <div className="w-24 h-24 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div
+                  className="w-40 h-40 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                  onClick={() => setPreviewAsset(asset)}
+                >
                   {asset.versions && asset.versions.length > 0 ? (
                     (() => {
                       const latest = asset.versions[asset.versions.length - 1];
                       const key = latest.storageKeyThumbnail ?? latest.storageKey;
                       const url = key ? `/local-storage/${key}` : null;
                       return url ? (
-                        <img src={url} alt={asset.name} className="w-full h-full object-cover" />
+                        <img src={url} alt={asset.name} className="w-full h-full object-cover pointer-events-none" />
                       ) : (
                         <span className="text-gray-600 text-xs">No preview</span>
                       );
@@ -126,6 +130,37 @@ function ReviewsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {previewAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewAsset(null)} />
+          <div className="relative max-w-4xl max-h-[90vh] w-full mx-4">
+            <button
+              onClick={() => setPreviewAsset(null)}
+              className="absolute -top-10 right-2 text-white hover:text-gray-300 text-sm"
+            >
+              Close
+            </button>
+            {(() => {
+              const latest = previewAsset.versions?.[previewAsset.versions.length - 1];
+              const key = latest?.storageKeyThumbnail ?? latest?.storageKey;
+              const url = key ? `/local-storage/${key}` : null;
+              if (!url) return <div className="text-white">No preview available</div>;
+              return (
+                <img
+                  src={url}
+                  alt={previewAsset.name}
+                  className="w-full h-auto max-h-[85vh] object-contain rounded-lg"
+                />
+              );
+            })()}
+            <div className="text-center mt-4">
+              <p className="text-gray-300 text-sm">{previewAsset.name}</p>
+              <p className="text-gray-500 text-xs mt-1">{previewAsset.description}</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
