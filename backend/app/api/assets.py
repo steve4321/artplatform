@@ -72,8 +72,8 @@ async def list_assets(
         base = base.where(Asset.state == state.value)
         count_stmt = count_stmt.where(Asset.state == state.value)
     elif not include_all:
-        base = base.where(Asset.state.in_(["approved", "published", "processing", "deprecated"]))
-        count_stmt = count_stmt.where(Asset.state.in_(["approved", "published", "processing", "deprecated"]))
+        base = base.where(Asset.state.in_(["approved", "published", "processing", "draft", "deprecated"]))
+        count_stmt = count_stmt.where(Asset.state.in_(["approved", "published", "processing", "draft", "deprecated"]))
     if asset_type is not None:
         base = base.where(Asset.asset_type == asset_type.value)
         count_stmt = count_stmt.where(Asset.asset_type == asset_type.value)
