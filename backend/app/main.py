@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.database import init_db, close_db
@@ -42,6 +43,12 @@ def create_app() -> FastAPI:
 
     from app.api import api_router
     app.include_router(api_router)
+
+    if settings.LOCAL_DEV:
+        from starlette.staticfiles import StaticFiles
+        storage_path = settings.local_dev_storage_dir / settings.S3_BUCKET
+        storage_path.mkdir(parents=True, exist_ok=True)
+        app.mount("/local-storage", StaticFiles(directory=str(storage_path)), name="local-storage")
 
     return app
 

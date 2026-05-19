@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from typing import Annotated
 from uuid import UUID
 
@@ -32,6 +33,8 @@ try:
 except ImportError:
     pass
 
+_HAS_BLENDER = bool(shutil.which("blender"))
+
 _LOCAL_DEV = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
 _PROCESSOR_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
 _EAGER_EXECUTION = _LOCAL_DEV or _PROCESSOR_MODE in ("mock", "local")
@@ -45,14 +48,24 @@ if _PROCESSOR_MODE == "mock":
         {"stage": "rig", "processor_name": "rigify_mock"},
         {"stage": "animate", "processor_name": "hy_motion_mock"},
     ]
+    PIPELINE_STAGES_2D = [
+        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
+        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan_mock"},
+        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch_mock"},
+    ]
 elif _PROCESSOR_MODE == "cloud":
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
         {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
         {"stage": "cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BPY else "rigify_mock"},
-        {"stage": "animate", "processor_name": "mixamo_preset" if _HAS_BPY else "hy_motion_mock"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
+        {"stage": "animate", "processor_name": "mixamo_preset" if _HAS_BLENDER else "hy_motion_mock"},
+    ]
+    PIPELINE_STAGES_2D = [
+        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
+        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan"},
+        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch"},
     ]
 else:
     PIPELINE_STAGES = [
@@ -60,8 +73,13 @@ else:
         {"stage": "image_to_3d", "processor_name": "triposr"},
         {"stage": "cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BPY else "rigify_mock"},
-        {"stage": "animate", "processor_name": "hy_motion_self_hosted" if _HAS_BPY else "hy_motion_mock"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
+        {"stage": "animate", "processor_name": "hy_motion_self_hosted" if _HAS_BLENDER else "hy_motion_mock"},
+    ]
+    PIPELINE_STAGES_2D = [
+        {"stage": "text_to_image", "processor_name": "sdxl"},
+        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan"},
+        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch"},
     ]
 
 
@@ -88,12 +106,13 @@ async def create_pipeline(
                 detail="Referenced asset not found",
             )
     else:
+        asset_type = AssetType.model_3d.value if payload.pipeline_type == "3d_art" else AssetType.texture_2d.value
         asset = Asset(
             team_id=current_user.team_id,
             created_by=current_user.id,
             name=f"AI Generated — {payload.prompt[:80]}",
             description=payload.prompt,
-            asset_type=AssetType.model_3d.value,
+            asset_type=asset_type,
             source="ai_generated",
             state="processing",
             tags=[],
@@ -102,6 +121,7 @@ async def create_pipeline(
         db.add(asset)
         await db.flush()
 
+    stages = PIPELINE_STAGES_2D if payload.pipeline_type == "2d_art" else PIPELINE_STAGES
     config_dict = payload.config.model_dump()
     pipeline = PipelineRun(
         asset_id=asset.id,
@@ -109,13 +129,13 @@ async def create_pipeline(
         reference_image_key=payload.reference_image_key,
         status="pending",
         config=config_dict,
-        total_stages=len(PIPELINE_STAGES),
+        total_stages=len(stages),
         completed_stages=0,
     )
     db.add(pipeline)
     await db.flush()
 
-    for idx, stage_def in enumerate(PIPELINE_STAGES, start=1):
+    for idx, stage_def in enumerate(stages, start=1):
         stage_config = config_dict.get("stages", {}).get(stage_def["stage"], {})
         step = PipelineStep(
             pipeline_run_id=pipeline.id,
@@ -196,6 +216,23 @@ async def get_pipeline(
     return PipelineResponse.model_validate(run)
 
 
+@router.delete("/{pipeline_id}")
+async def delete_pipeline(
+    pipeline_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(require_role("admin", "artist")),
+) -> None:
+    stmt = select(PipelineRun).where(PipelineRun.id == pipeline_id)
+    result = await db.execute(stmt)
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pipeline run not found")
+
+    asset = run.asset
+    db.delete(run)
+    await db.commit()
+
+
 @router.post("/{pipeline_id}/retry/{stage_order}", response_model=PipelineResponse)
 async def retry_stage(
     pipeline_id: UUID,
@@ -233,8 +270,9 @@ async def retry_stage(
             detail=f"Stage order {stage_order} not found in this pipeline",
         )
 
-    run.status = "running"
-    await db.commit()
+    if _EAGER_EXECUTION:
+        from app.pipeline.runner import run_pipeline
+        run_pipeline.delay(str(pipeline_id))
 
     stmt = (
         select(PipelineRun)
@@ -268,12 +306,7 @@ async def get_step_output(
             detail="No output artifact available for this step",
         )
 
-    artifact_id = step.output_artifact_ids[0]
-    art_result = await db.execute(select(Artifact).where(Artifact.id == artifact_id))
-    artifact = art_result.scalar_one_or_none()
-    if artifact is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
-
+    storage_key = step.output_artifact_ids[0]
     storage = get_storage()
-    url = storage.generate_presigned_url(artifact.storage_key)
+    url = storage.generate_presigned_url(storage_key)
     return {"url": url, "expires_in": "3600"}

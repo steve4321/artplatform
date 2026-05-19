@@ -77,6 +77,7 @@ export interface PipelineRun {
   referenceImageKey: string | null;
   status: string;
   config: Record<string, unknown>;
+  pipelineType: PipelineType;
   totalStages: number | null;
   completedStages: number;
   createdAt: string;
@@ -114,6 +115,11 @@ export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipp
 
 export type StylePreset = 'realistic' | 'anime' | 'cartoon' | 'fantasy' | 'sci-fi';
 export type QualityLevel = 'draft' | 'standard' | 'high';
+export type PipelineType = '3d_art' | '2d_art';
+
+export type UsageType = 'icon' | 'portrait' | 'card' | 'background' | 'sprite';
+export type OutputSize = '64x64' | '128x128' | '256x256' | '512x512' | '1024x1024';
+export type OutputFormat = 'png' | 'sprite_sheet' | '9_patch';
 
 export interface GenerationConfig {
   prompt: string;
@@ -140,4 +146,10 @@ export const PIPELINE_STAGES: StageInfo[] = [
   { id: 'uv_material', name: 'UV+Material', icon: '🎨', status: 'pending' },
   { id: 'rig', name: 'Rig', icon: '🦴', status: 'pending' },
   { id: 'animate', name: 'Animate', icon: '🎬', status: 'pending' },
+];
+
+export const PIPELINE_STAGES_2D: StageInfo[] = [
+  { id: 'text_to_image', name: 'Generate Image', icon: '🖼', status: 'pending' },
+  { id: 'postprocess_2d', name: 'Post-Process', icon: '✂️', status: 'pending' },
+  { id: 'format_output_2d', name: 'Format Output', icon: '📄', status: 'pending' },
 ];

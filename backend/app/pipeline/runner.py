@@ -5,12 +5,14 @@ import time
 import uuid
 from uuid import UUID
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 from app.core.storage import MinioStorage, get_storage
 from app.models.pipeline import PipelineRun, PipelineStep
+from app.models import Asset
+from app.models.asset_version import AssetVersion
 from app.pipeline.registry import get_processor
 from app.workers.celery_app import celery_app
 
@@ -18,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 _sync_engine = None
 _sync_session_factory: sessionmaker[Session] | None = None
+
+
+def _set_sqlite_wal(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def _get_sync_engine():
@@ -29,6 +38,8 @@ def _get_sync_engine():
         else:
             sync_url = settings.DATABASE_URL.replace("+asyncpg", "")
         _sync_engine = create_engine(sync_url, echo=settings.DEBUG, pool_size=3, max_overflow=5)
+        if sync_url.startswith("sqlite"):
+            event.listen(_sync_engine, "connect", _set_sqlite_wal)
     return _sync_engine
 
 
@@ -114,6 +125,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
             })
 
         completed = 0
+        last_successful_step = None
 
         for step in steps:
             step.status = "running"
@@ -147,6 +159,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
                     session.commit()
 
                     carry_over_artifacts = uploaded
+                    last_successful_step = step
                     completed += 1
 
                 except Exception as exc:
@@ -158,11 +171,30 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
 
                     pipeline_run.completed_stages = completed
                     pipeline_run.status = "partial" if completed > 0 else "failed"
+                    if pipeline_run.asset:
+                        pipeline_run.asset.state = "deprecated"
                     session.commit()
                     return
 
         pipeline_run.completed_stages = completed
         pipeline_run.status = "completed"
+        pipeline_run.asset.state = "review"
+
+        if carry_over_artifacts and pipeline_run.asset and last_successful_step and last_successful_step.output_artifact_ids:
+            asset = pipeline_run.asset
+            version_number = asset.current_version or 1
+            for storage_key in last_successful_step.output_artifact_ids:
+                ext = os.path.splitext(storage_key)[1].lstrip(".").lower() or "bin"
+                version = AssetVersion(
+                    asset_id=asset.id,
+                    version=version_number,
+                    storage_key=storage_key,
+                    file_format=ext,
+                    source_type="ai_pipeline",
+                    pipeline_run_id=pipeline_run.id,
+                )
+                session.add(version)
+
         session.commit()
 
     except Exception:

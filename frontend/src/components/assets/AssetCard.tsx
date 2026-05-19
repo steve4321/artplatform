@@ -36,7 +36,11 @@ const typeLabels: Record<string, string> = {
 
 function getThumbnailUrl(asset: Asset): string | null {
   const latestVersion = asset.versions?.[asset.versions.length - 1];
-  return latestVersion?.storageKeyThumbnail ?? null;
+  if (!latestVersion) return null;
+  const key = latestVersion.storageKeyThumbnail ?? latestVersion.storageKey;
+  if (!key) return null;
+  if (key.startsWith('/local-storage/')) return key;
+  return `/local-storage/${key}`;
 }
 
 export function AssetCard({ asset, onClick }: AssetCardProps) {

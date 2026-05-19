@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -11,6 +12,13 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
+
+
+def _set_sqlite_wal(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -42,6 +50,7 @@ def _get_engine():
                 echo=settings.DEBUG,
                 connect_args={"check_same_thread": False},
             )
+            event.listen(_engine.sync_engine, "connect", _set_sqlite_wal)
         else:
             _engine = create_async_engine(
                 url,

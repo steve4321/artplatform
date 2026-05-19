@@ -107,7 +107,17 @@ function AssetDetailModal({
           {activeTab === 'preview' ? (
             <div className="h-full p-4">
               {previewUrl ? (
-                <AssetViewer modelUrl={previewUrl} className="w-full h-full" autoPlay />
+                asset.assetType === 'texture_2d' || asset.assetType === 'sprite' ? (
+                  <div className="h-full flex items-center justify-center overflow-hidden">
+                    <img
+                      src={latestVersion?.storageKey ? `/local-storage/${latestVersion.storageKey}` : previewUrl}
+                      alt={asset.name}
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <AssetViewer modelUrl={previewUrl} className="w-full h-full" autoPlay />
+                )
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-600">
                   <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
