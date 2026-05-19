@@ -158,21 +158,22 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       return null;
     }
 
-    // If a stage is selected, get its output URL
+    const findGlbArtifact = (step: PipelineStep): string | null => {
+      const glbKey = step.outputArtifactIds.find((id) => id.endsWith('.glb'));
+      return glbKey ? `/local-storage/${glbKey}` : null;
+    };
+
     if (selectedStageIndex !== null && steps[selectedStageIndex]) {
       const step = steps[selectedStageIndex];
-      if (step.status === 'completed' && step.outputArtifactIds.length > 0) {
-        return `/api/v1/pipelines/${currentRun.id}/steps/${step.stageOrder}/output`;
+      if (step.status === 'completed') {
+        return findGlbArtifact(step);
       }
     }
 
-    // Get the last completed step's output URL
     const completedSteps = steps.filter((s) => s.status === 'completed');
-    if (completedSteps.length > 0) {
-      const lastStep = completedSteps[completedSteps.length - 1];
-      if (lastStep.outputArtifactIds.length > 0) {
-        return `/api/v1/pipelines/${currentRun.id}/steps/${lastStep.stageOrder}/output`;
-      }
+    for (let i = completedSteps.length - 1; i >= 0; i--) {
+      const url = findGlbArtifact(completedSteps[i]);
+      if (url) return url;
     }
 
     return null;
@@ -185,26 +186,23 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       return [];
     }
 
-    // If a stage is selected, get its output URLs
+    const toImageUrls = (step: PipelineStep): string[] =>
+      step.outputArtifactIds
+        .filter((id) => id.endsWith('.png') || id.endsWith('.jpg') || id.endsWith('.jpeg'))
+        .map((id) => `/local-storage/${id}`);
+
     if (selectedStageIndex !== null && steps[selectedStageIndex]) {
       const step = steps[selectedStageIndex];
-      if (step.status === 'completed' && step.outputArtifactIds.length > 0) {
-        return step.outputArtifactIds.map(
-          (artifactId, idx) =>
-            `/api/v1/pipelines/${currentRun.id}/steps/${step.stageOrder}/output?artifact=${artifactId}&index=${idx}`
-        );
+      if (step.status === 'completed') {
+        const urls = toImageUrls(step);
+        if (urls.length > 0) return urls;
       }
     }
 
-    // Get all completed steps' output URLs (for candidate images at stage 1)
     const completedSteps = steps.filter((s) => s.status === 'completed');
     const urls: string[] = [];
     completedSteps.forEach((step) => {
-      step.outputArtifactIds.forEach((artifactId, idx) => {
-        urls.push(
-          `/api/v1/pipelines/${currentRun.id}/steps/${step.stageOrder}/output?artifact=${artifactId}&index=${idx}`
-        );
-      });
+      urls.push(...toImageUrls(step));
     });
 
     return urls;
