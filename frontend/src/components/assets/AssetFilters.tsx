@@ -81,7 +81,7 @@ export function AssetFilters({
         onChange={(e) => onStateChange(e.target.value as State | 'all')}
         className="px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg text-gray-300 focus:outline-none focus:border-blue-600 transition-colors cursor-pointer"
       >
-        <option value="all">All States</option>
+        <option value="all">Active</option>
         <option value="draft">Draft</option>
         <option value="processing">Processing</option>
         <option value="review">In Review</option>

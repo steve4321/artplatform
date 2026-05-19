@@ -58,6 +58,7 @@ async def list_assets(
     source: str | None = None,
     tags: str | None = Query(None, description="Comma-separated tag list"),
     search: str | None = Query(None, description="Search by name (ILIKE)"),
+    include_all: bool = Query(False, description="Include draft/review/rejected assets"),
 ) -> AssetListResponse:
     """List assets with optional filtering and pagination."""
     base = select(Asset).options(
@@ -70,6 +71,9 @@ async def list_assets(
     if state is not None:
         base = base.where(Asset.state == state.value)
         count_stmt = count_stmt.where(Asset.state == state.value)
+    elif not include_all:
+        base = base.where(Asset.state.in_(["approved", "published", "processing", "deprecated"]))
+        count_stmt = count_stmt.where(Asset.state.in_(["approved", "published", "processing", "deprecated"]))
     if asset_type is not None:
         base = base.where(Asset.asset_type == asset_type.value)
         count_stmt = count_stmt.where(Asset.asset_type == asset_type.value)

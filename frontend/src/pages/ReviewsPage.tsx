@@ -1,13 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import client from '../api/client';
-import { useReviewStore } from '../stores/reviewStore';
 import type { Asset } from '../types';
 
 function ReviewsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
-  const { submitReview } = useReviewStore();
 
   const fetchReviewQueue = useCallback(async () => {
     setIsLoading(true);
@@ -28,7 +26,11 @@ function ReviewsPage() {
   const handleReview = async (assetId: string, version: number, decision: string) => {
     setSubmitting(assetId);
     try {
-      await submitReview({ assetId, version, decision });
+      if (decision === 'approved') {
+        await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'approved' });
+      } else if (decision === 'rejected') {
+        await client.delete(`/api/v1/assets/${assetId}`);
+      }
       await fetchReviewQueue();
     } catch (err) {
       console.error('Failed to submit review:', err);

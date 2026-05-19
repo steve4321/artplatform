@@ -178,7 +178,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
 
         pipeline_run.completed_stages = completed
         pipeline_run.status = "completed"
-        pipeline_run.asset.state = "review"
+        pipeline_run.asset.state = "draft"
 
         if carry_over_artifacts and pipeline_run.asset and last_successful_step and last_successful_step.output_artifact_ids:
             asset = pipeline_run.asset

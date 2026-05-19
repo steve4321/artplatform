@@ -54,7 +54,10 @@ export const useAssetStore = create<AssetState>((set, get) => ({
 
       if (filters.search) params.append('search', filters.search);
       if (filters.assetType !== 'all') params.append('asset_type', filters.assetType);
-      if (filters.state !== 'all') params.append('state', filters.state);
+      if (filters.state !== 'all') {
+        params.append('state', filters.state);
+        params.append('include_all', 'true');
+      }
       params.append('page', page.toString());
       params.append('page_size', pageSize.toString());
 
