@@ -28,7 +28,7 @@ function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-100">Dashboard</h1>
         <p className="text-gray-400 mt-1">Overview of your ArtPlatform workspace</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
           <p className="text-sm text-gray-400">Total Assets</p>
           <p className="text-3xl font-bold text-gray-100 mt-2">{stats.totalAssets}</p>
@@ -40,10 +40,6 @@ function DashboardPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
           <p className="text-sm text-gray-400">Active Pipelines</p>
           <p className="text-3xl font-bold text-gray-100 mt-2">{stats.activePipelines}</p>
-        </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
-          <p className="text-sm text-gray-400">Storage Used</p>
-          <p className="text-3xl font-bold text-gray-100 mt-2">—</p>
         </div>
       </div>
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">

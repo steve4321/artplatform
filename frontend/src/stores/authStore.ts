@@ -25,8 +25,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await client.post('/api/v1/auth/login', { email, password });
       const accessToken = response.data.accessToken;
       localStorage.setItem('auth_token', accessToken);
-      set({ token: accessToken, isAuthenticated: true });
+      set({ token: accessToken });
       await get().fetchUser();
+      set({ isAuthenticated: true });
+    } catch {
+      localStorage.removeItem('auth_token');
+      set({ user: null, token: null, isAuthenticated: false });
     } finally {
       set({ isLoading: false });
     }

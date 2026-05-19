@@ -266,6 +266,8 @@ function ConfigPanel3D({
   onQualityChange,
   onGenerate,
   isBusy,
+  referenceFile,
+  onReferenceFileChange,
 }: {
   prompt: string;
   onPromptChange: (v: string) => void;
@@ -277,6 +279,8 @@ function ConfigPanel3D({
   onQualityChange: (v: QualityLevel) => void;
   onGenerate: () => void;
   isBusy: boolean;
+  referenceFile: File | null;
+  onReferenceFileChange: (file: File | null) => void;
 }) {
   const [showNegative, setShowNegative] = useState(false);
 
@@ -360,17 +364,41 @@ function ConfigPanel3D({
 
       <div>
         <label className="block text-xs font-medium text-gray-400 mb-1">Reference (optional)</label>
-        <button className="w-full py-2 border border-dashed border-gray-700 rounded-md text-gray-500 hover:border-gray-600 hover:text-gray-400 transition-colors flex items-center justify-center gap-1.5 text-xs">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+        {referenceFile ? (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-xs text-gray-300 truncate bg-gray-800 px-3 py-2 rounded-md">{referenceFile.name}</span>
+            <button
+              onClick={() => onReferenceFileChange(null)}
+              disabled={isBusy}
+              className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <label className="w-full py-2 border border-dashed border-gray-700 rounded-md text-gray-500 hover:border-gray-600 hover:text-gray-400 transition-colors flex items-center justify-center gap-1.5 text-xs cursor-pointer">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+            Upload
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onReferenceFileChange(f);
+              }}
+              className="hidden"
             />
-          </svg>
-          Upload
-        </button>
+          </label>
+        )}
       </div>
 
       <button
@@ -890,6 +918,7 @@ export default function GeneratePage() {
   const [outputSize, setOutputSize] = useState<OutputSize>('512x512');
   const [removeBackground, setRemoveBackground] = useState(true);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('png');
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
 
   const {
     currentRun,
@@ -1066,6 +1095,8 @@ export default function GeneratePage() {
               onQualityChange={setQuality}
               onGenerate={handleGenerate}
               isBusy={isBusy}
+              referenceFile={referenceFile}
+              onReferenceFileChange={setReferenceFile}
             />
           ) : (
             <ConfigPanel2D

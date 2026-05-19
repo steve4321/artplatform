@@ -24,6 +24,13 @@ function AppLayout() {
             <Route path="/assets" element={<AssetsPage />} />
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={
+              <div className="flex flex-col items-center justify-center h-full">
+                <h1 className="text-4xl font-bold text-gray-100">404</h1>
+                <p className="text-gray-400 mt-2">Page not found</p>
+                <a href="/dashboard" className="mt-4 text-blue-400 hover:text-blue-300 text-sm">Back to Dashboard</a>
+              </div>
+            } />
           </Routes>
         </main>
       </div>

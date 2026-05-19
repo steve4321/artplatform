@@ -24,7 +24,7 @@ function ReviewsPage() {
     fetchReviewQueue();
   }, [fetchReviewQueue]);
 
-  const handleReview = async (assetId: string, version: number, decision: string) => {
+  const handleReview = async (assetId: string, decision: string) => {
     const labels: Record<string, string> = {
       approved: 'approve',
       rejected: 'reject',
@@ -111,21 +111,21 @@ function ReviewsPage() {
                   <p className="text-gray-300 mt-2 line-clamp-2">{asset.description || 'No description'}</p>
                   <div className="flex gap-3 mt-4">
                     <button
-                      onClick={() => handleReview(asset.id, asset.currentVersion, 'approved')}
+                      onClick={() => handleReview(asset.id, 'approved')}
                       disabled={submitting === asset.id}
                       className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       {submitting === asset.id ? 'Submitting...' : 'Approve'}
                     </button>
                     <button
-                      onClick={() => handleReview(asset.id, asset.currentVersion, 'rejected')}
+                      onClick={() => handleReview(asset.id, 'rejected')}
                       disabled={submitting === asset.id}
                       className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       Reject
                     </button>
                     <button
-                      onClick={() => handleReview(asset.id, asset.currentVersion, 'changes_requested')}
+                      onClick={() => handleReview(asset.id, 'changes_requested')}
                       disabled={submitting === asset.id}
                       className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm font-medium rounded-lg border border-gray-700 transition-colors"
                     >
