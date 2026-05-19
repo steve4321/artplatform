@@ -74,7 +74,6 @@ else:
         {"stage": "cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
         {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
-        {"stage": "animate", "processor_name": "hy_motion_self_hosted" if _HAS_BLENDER else "hy_motion_mock"},
     ]
     PIPELINE_STAGES_2D = [
         {"stage": "text_to_image", "processor_name": "sdxl"},

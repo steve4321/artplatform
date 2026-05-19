@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from io import BytesIO
 from uuid import UUID
@@ -12,6 +17,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.storage import StorageClient, get_storage
 from app.models import Asset, AssetVersion
+
+logger = logging.getLogger(__name__)
 
 _README_TEMPLATE = """\
 {asset_name} — Unity Import Instructions
@@ -136,16 +143,62 @@ class ExportService:
         safe_name = asset.name.replace(" ", "_")
         fbx_key = f"exports/{asset_id}/v{version}/{safe_name}.fbx"
 
-        try:
-            import trimesh  # type: ignore[import-untyped]
-
-            mesh = trimesh.load(BytesIO(glb_data), file_type="glb")
-            fbx_buf = BytesIO()
-            mesh.export(fbx_buf, file_type="fbx")
-            fbx_data = fbx_buf.getvalue()
-        except ImportError:
-            fbx_data = glb_data
-            fbx_key = f"exports/{asset_id}/v{version}/{safe_name}.glb"
+        blender_bin = shutil.which("blender")
+        if blender_bin:
+            fbx_data = self._convert_glb_to_fbx_blender(glb_data, blender_bin)
+        else:
+            fbx_data = self._convert_glb_to_fbx_trimesh(glb_data)
+            if fbx_data is None:
+                fbx_data = glb_data
+                fbx_key = f"exports/{asset_id}/v{version}/{safe_name}.glb"
 
         self.storage.upload_file(fbx_key, fbx_data, "model/fbx")
         return self.storage.generate_presigned_url(fbx_key)
+
+    def _convert_glb_to_fbx_blender(self, glb_data: bytes, blender_bin: str) -> bytes:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            glb_path = os.path.join(tmpdir, "input.glb")
+            fbx_path = os.path.join(tmpdir, "output.fbx")
+            script_path = os.path.join(tmpdir, "convert.py")
+
+            with open(glb_path, "wb") as f:
+                f.write(glb_data)
+
+            script = (
+                "import bpy\n"
+                "bpy.ops.wm.read_factory_settings(use_empty=True)\n"
+                f"bpy.ops.import_scene.gltf(filepath=r'{glb_path}')\n"
+                "bpy.ops.export_scene.fbx(\n"
+                f"    filepath=r'{fbx_path}',\n"
+                "    use_selection=False,\n"
+                "    bake_anim=True,\n"
+                "    armature_type='EXPORT',\n"
+                ")\n"
+            )
+            with open(script_path, "w") as f:
+                f.write(script)
+
+            result = subprocess.run(
+                [blender_bin, "--background", "--python", script_path],
+                capture_output=True, text=True, timeout=120,
+            )
+
+            if result.returncode != 0:
+                logger.warning("Blender FBX export failed (exit %d): %s", result.returncode, result.stderr[-500:])
+                raise RuntimeError(f"Blender FBX export failed: {result.stderr[-500:]}")
+
+            if not os.path.isfile(fbx_path):
+                raise RuntimeError("Blender FBX export produced no output file")
+
+            with open(fbx_path, "rb") as f:
+                return f.read()
+
+    def _convert_glb_to_fbx_trimesh(self, glb_data: bytes) -> bytes | None:
+        try:
+            import trimesh
+            mesh = trimesh.load(BytesIO(glb_data), file_type="glb")
+            fbx_buf = BytesIO()
+            mesh.export(fbx_buf, file_type="fbx")
+            return fbx_buf.getvalue()
+        except Exception:
+            return None
