@@ -25,10 +25,18 @@ from app.schemas.pipeline import (
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
 
+_HAS_BPY = False
+try:
+    import bpy  # noqa: F401
+    _HAS_BPY = True
+except ImportError:
+    pass
+
 _LOCAL_DEV = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
 _PROCESSOR_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
+_EAGER_EXECUTION = _LOCAL_DEV or _PROCESSOR_MODE in ("mock", "local")
 
-if _LOCAL_DEV or _PROCESSOR_MODE == "mock":
+if _PROCESSOR_MODE == "mock":
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl_mock"},
         {"stage": "image_to_3d", "processor_name": "triposr_mock"},
@@ -38,24 +46,22 @@ if _LOCAL_DEV or _PROCESSOR_MODE == "mock":
         {"stage": "animate", "processor_name": "hy_motion_mock"},
     ]
 elif _PROCESSOR_MODE == "cloud":
-    # Cloud API mode — GPU stages via ProviderRouter, CPU stages run locally
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
         {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
         {"stage": "cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify"},
-        {"stage": "animate", "processor_name": "hy_motion"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BPY else "rigify_mock"},
+        {"stage": "animate", "processor_name": "mixamo_preset" if _HAS_BPY else "hy_motion_mock"},
     ]
 else:
-    # _PROCESSOR_MODE == "local": self-hosted GPU inference
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl"},
         {"stage": "image_to_3d", "processor_name": "triposr"},
-        {"stage": "mesh_cleanup", "processor_name": "instant_meshes"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
         {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify"},
-        {"stage": "animate", "processor_name": "hy_motion_self_hosted"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BPY else "rigify_mock"},
+        {"stage": "animate", "processor_name": "hy_motion_self_hosted" if _HAS_BPY else "hy_motion_mock"},
     ]
 
 
@@ -123,7 +129,7 @@ async def create_pipeline(
 
     await db.commit()
 
-    if MOCK_MODE:
+    if _EAGER_EXECUTION:
         from app.workers import ensure_processors_registered
         from app.pipeline.runner import run_pipeline
 

@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 
 import torch
+
+_TSR_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".local_libs", "TripoSR")
+if os.path.isdir(_TSR_PATH) and _TSR_PATH not in sys.path:
+    sys.path.insert(0, os.path.abspath(_TSR_PATH))
+
 from app.pipeline.processor import PipelineProcessor
 from app.pipeline.registry import register
 
