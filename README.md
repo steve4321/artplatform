@@ -2,15 +2,17 @@
 
 面向 Unity 3D 游戏开发的美术资源一站式生成管理平台。
 
-输入文字提示词，自动生成生产级 3D 美术资源（建模 + 材质 + 蒙皮 + 动作），全程 Web 操作，Unity 仅作为消费端。
+输入文字提示词，自动生成生产级 3D 美术资源（建模 + 材质 + 蒙皮 + 动作）和 2D UI 美术资源（图标 / 立绘 / 卡牌 / 背景），全程 Web 操作，Unity 仅作为消费端。
 
 ## 功能特性
 
-- **提示词驱动**：输入文字描述，自动走完 6 阶段 AI 管线
-- **完整管线**：文生图 → 3D 建模 → 网格清理 → UV+材质 → 骨骼绑定 → 动画生成
+- **提示词驱动**：输入文字描述，自动走完 AI 管线（3D 为 6 阶段，2D 为 3 阶段）
+- **3D 管线**：文生图 → 3D 建模 → 网格清理 → UV+材质 → 骨骼绑定 → 动画生成
+- **2D 管线**：文生图 → 去背景+后处理 → PNG / Sprite Sheet / 9-Patch 产出
 - **3D Web 预览**：浏览器内实时预览（旋转/缩放/线框/骨骼/动画）
+- **2D Web 预览**：透明棋盘格背景、去背景对比、Sprite 帧播放
 - **团队协作**：RBAC 权限管理、Review 审批流
-- **Unity 就绪**：导出 FBX + 纹理，拖入 Unity 即可使用
+- **Unity 就绪**：导出 FBX + 纹理 / PNG 贴图，拖入 Unity 即可使用
 - **CLI 工具**：命令行操作，支持脚本自动化和 CI/CD 集成
 - **MCP 服务**：AI 助手可直接调用平台能力（Claude / Cursor / Copilot）
 
@@ -132,7 +134,7 @@ pip install -e ".[mcp]"
 }
 ```
 
-MCP 提供 9 个工具：`generate_3d_asset`、`list_assets`、`get_asset`、`update_asset`、`upload_asset_version`、`export_asset`、`submit_review`、`run_pipeline`、`get_pipeline_status`。
+MCP 提供 9 个工具：`generate_3d_asset`、`generate_2d_asset`、`list_assets`、`get_asset`、`update_asset`、`upload_asset_version`、`export_asset`、`submit_review`、`run_pipeline`、`get_pipeline_status`。
 
 ## 部署方案
 
@@ -193,6 +195,8 @@ CPU Workers:  Instant Meshes + xatlas + Blender(bpy) + Rigify
 
 ### 管线流程
 
+#### 3D 管线（6 阶段）
+
 ```
 "一个穿铠甲的奇幻女战士" (文字提示词)
     │
@@ -205,8 +209,31 @@ Stage 5: 骨骼绑定         → 带骨骼的蒙皮网格 (GLB)
 Stage 6: 动画生成         → 带动画的最终模型 (GLB)
     │
     ▼
-Web 预览 → Review → 发布 → Unity 导出
+Web 3D 预览 → Review → 发布 → Unity 导出
 ```
+
+#### 2D 管线（3 阶段）
+
+```
+"一把燃烧的传奇长剑图标，暗黑风格" (文字提示词)
+    │
+    ▼
+Stage 1: 文生图          → 2-4 张候选图 (PNG)
+Stage 2: 后处理           → 去背景 + 统一尺寸 + 可选超分辨率
+Stage 3: 格式产出         → PNG / Sprite Sheet / 9-Patch
+    │
+    ▼
+Web 2D 预览 → Review → 发布 → Unity 导入
+```
+
+**2D 管线参数：**
+
+| 参数 | 选项 | 默认 |
+|------|------|------|
+| 用途类型 | icon / portrait / card / background / sprite | icon |
+| 输出尺寸 | 64-1024px 或自定义 | 512×512 |
+| 去背景 | 是 / 否 | icon/card 默认是 |
+| 超分辨率 | 1x / 2x / 4x (Real-ESRGAN) | 1x |
 
 ### 各阶段工具与硬件需求
 
@@ -221,6 +248,8 @@ Web 预览 → Review → 发布 → Unity 导出
 | 5. 骨骼绑定 | **Rigify** (via bpy) | CPU | — | 8 GB+ | 内置于 Blender | 5-15s |
 | 6. 动画生成 | **HY-Motion 1.0 Lite** | GPU | **24 GB** | 16 GB+ | ~4 GB (0.46B params) | 10-30s |
 | 6. 动画生成 | *Mixamo 预设 (备选)* | — | — | — | Web API | 即时 |
+| 2D-2. 去背景 | **rembg** | CPU/GPU | 可选 | 4 GB+ | ~180 MB | <1s |
+| 2D-2. 超分辨率 | **Real-ESRGAN** | CPU/GPU | 可选 | 4 GB+ | ~17 MB | 1-3s |
 
 ### GPU 选型建议
 
@@ -261,6 +290,7 @@ Web 预览 → Review → 发布 → Unity 导出
 | 任务队列 | Celery + Redis / Eager (dev) | GPU/CPU Worker 调度 |
 | AI 推理 | diffusers + 自定义 Worker | Python 原生，Docker GPU 直通 |
 | 3D 处理 | Blender (bpy) + xatlas + Instant Meshes | 进程内调用，无冷启动 |
+| 2D 处理 | rembg + Real-ESRGAN | 去背景 + 超分辨率 |
 | 动画 | HY-Motion 1.0 Lite | 本地部署，Apache 2.0 |
 
 ## 项目结构
@@ -306,14 +336,16 @@ LOCAL_DEV=true python -m pytest tests/ -v
 
 - [x] 后端 API + JWT 认证 + RBAC 权限
 - [x] 资产 CRUD + 版本管理 + 状态机
-- [x] 管线编排 + Mock 6 阶段处理器
+- [x] 管线编排 + Mock 6 阶段处理器（3D）
+- [x] 2D 美术管线设计（3 阶段：文生图 → 后处理 → 格式产出）
 - [x] 前端全页面对接真实 API（登录、Dashboard、Generate、Assets、Reviews、Settings）
 - [x] CLI 工具（9 个命令）
-- [x] MCP Server（9 个工具 + 1 个 Prompt 模板）
+- [x] MCP Server（10 个工具 + 1 个 Prompt 模板）
 - [x] 33 个自动化测试
 - [ ] 接入真实 AI 模型（需 GPU 环境）
 - [ ] Docker Compose 生产部署
 - [ ] 3D 预览器对接真实 GLB 文件
+- [ ] 2D 预览器（棋盘格背景、去背景对比、Sprite 帧播放）
 - [ ] WebSocket 实时推送管线进度
 
 ## 许可证

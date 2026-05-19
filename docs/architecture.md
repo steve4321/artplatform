@@ -85,12 +85,63 @@
            → Web 3D预览 → Review → 发布
 ```
 
+### 2D Art Pipeline
+
+除了 3D 模型管线，平台同时支持独立的 2D 美术资源生成，用于游戏 UI 贴图、图标、立绘、卡牌插画等。
+
+```
+用户输入: "一把燃烧的传奇长剑图标，暗黑风格"
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│  Stage 1: 文生图 (SDXL)                      │  GPU Worker, ~10s
+│  → 生成 2-4 张候选图                          │
+│  → 用户选一张（或自动选最优）                  │  ← 复用 3D 管线同 Worker
+└──────────────────┬──────────────────────────┘
+                   ▼
+┌─────────────────────────────────────────────┐
+│  Stage 2: 后处理                             │  CPU Worker, ~3s
+│  → 去背景 (rembg / SAM)                      │
+│  → 统一尺寸 / padding                        │
+│  → 可选: 超分辨率 (Real-ESRGAN 2x/4x)        │
+└──────────────────┬──────────────────────────┘
+                   ▼
+┌─────────────────────────────────────────────┐
+│  Stage 3: 格式产出                           │  CPU Worker, ~1s
+│  → 单张 PNG (icon/portrait/card/background)  │
+│  → 或 Sprite Sheet (多帧拼合 + JSON 坐标映射) │
+│  → 或 9-Patch (带拉伸标记的 PNG)              │
+└──────────────────┬──────────────────────────┘
+                   ▼
+           最终 2D 资产 (.png + 元数据)
+           → Web 预览 → Review → 发布
+```
+
+**2D 管线用户参数：**
+
+| 参数 | 选项 | 默认值 |
+|------|------|--------|
+| 用途类型 | icon / portrait / card / background / sprite | icon |
+| 输出尺寸 | 64×64, 128×128, 256×256, 512×512, 1024×1024, 自定义 | 512×512 |
+| 风格 | 写实 / 卡通 / 像素 / 暗黑 / 二次元 | 写实 |
+| 去背景 | 是 / 否 | 是（icon/card 默认是，background 默认否） |
+| 超分辨率 | 1x / 2x / 4x | 1x |
+
+**与 3D 管线的关系：**
+- 共享 Stage 1 的 SDXL Worker（文生图能力复用）
+- 共享资产管理体系（版本、审批、权限、导出）
+- `pipeline_runs` 表通过 `pipeline_type` 字段区分 `3d_full` / `2d_art`
+- 独立的阶段处理器，互不影响
+
 ### UX: Single-Page Progressive Workflow
+
+#### 3D 模式
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  [提示词输入框]                            [生成按钮]     │
 │  [可选: 上传设计图]                                       │
+│  资源类型: ◉ 3D 模型  ○ 2D 贴图                           │
 ├──────────┬───────────────────────────┬───────────────────┤
 │          │                           │  管线时间线         │
 │  参数    │      3D 预览画布          │  ● 文生图 ✓ 10s   │
@@ -105,6 +156,34 @@
 │          │                           │   查看中间结果）    │
 ├──────────┴───────────────────────────┴───────────────────┤
 │  [下载 FBX]  [下载 GLB]  [下载 Unity包]  [提交Review]    │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 2D 贴图模式
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  [提示词输入框]                            [生成按钮]     │
+│  [可选: 上传参考图]                                       │
+│  资源类型: ○ 3D 模型  ◉ 2D 贴图                           │
+├──────────┬───────────────────────────┬───────────────────┤
+│          │                           │  管线时间线         │
+│  参数    │      2D 图片预览          │  ● 文生图 ✓ 10s   │
+│  面板    │      (透明棋盘格背景)      │  ◉ 后处理... 3s   │
+│          │                           │  ○ 格式产出        │
+│  用途    │   [缩放/原始尺寸/对比]     │                   │
+│  icon    │   [去背景 前/后 切换]      │  [编辑] [重试]     │
+│  portrait│                           │                   │
+│  card    │                           │                   │
+│  sprite  │                           │                   │
+│          │                           │                   │
+│  尺寸    │                           │                   │
+│  512×512 │                           │                   │
+│          │                           │                   │
+│  去背景  │                           │                   │
+│  超分辨率│                           │                   │
+├──────────┴───────────────────────────┴───────────────────┤
+│  [下载 PNG]  [下载 Sprite Sheet]  [下载 9-Patch]  [提交Review] │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -144,7 +223,8 @@ CREATE TABLE assets (
     name TEXT NOT NULL,
     asset_type TEXT NOT NULL CHECK (
         'model_3d','texture_2d','sprite','material',
-        'animation_clip','prefab','audio','vfx'
+        'animation_clip','prefab','audio','vfx',
+        'ui_icon','ui_portrait','ui_card','ui_background'
     ),
     source TEXT NOT NULL CHECK ('ai_generated','manual_upload','hybrid'),
     state TEXT NOT NULL DEFAULT 'draft' CHECK (
@@ -188,6 +268,9 @@ CREATE TABLE asset_dependencies (
 CREATE TABLE pipeline_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id UUID NOT NULL REFERENCES assets(id),
+    pipeline_type TEXT NOT NULL DEFAULT '3d_full' CHECK (
+        '3d_full','2d_art'
+    ),
     prompt TEXT NOT NULL,
     reference_image_key TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (
@@ -275,8 +358,8 @@ Rules:
 
 ### Recommended Free/Open-Source Tools
 
-| Stage | Tool | License | Notes |
-|-------|------|---------|-------|
+| 阶段 | 工具 | License | Notes |
+|------|------|---------|-------|
 | 文生图 | SDXL / SD3 | OpenRAIL | Stable Diffusion, self-hosted |
 | 图生3D | TripoSR | MIT | 0.5s on A100, 6GB VRAM |
 | 图生3D (增强) | Stable Fast 3D | Apache 2.0 | Built-in UV unwrapping |
@@ -288,6 +371,8 @@ Rules:
 | 骨骼绑定 (增强) | UniRig | Open | SIGGRAPH 2025, TripoSR team |
 | 文本驱动动画 | HY-Motion 1.0 Lite | Apache 2.0 | 460M params, ~24GB VRAM |
 | 动画库 | Mixamo | Free (web) | Thousands of free animations |
+| 去背景 | rembg | MIT | U2-Net based, `pip install rembg` |
+| 超分辨率 | Real-ESRGAN | BSD 3-Clause | 2x/4x upscale, `pip install realesrgan` |
 
 ### Deployment: Docker Containers
 
@@ -300,6 +385,8 @@ Rules:
 | Blender | `import bpy` (in-process) | No GPU | No subprocess, no cold start |
 | Rigify/UniRig | Embedded in Blender worker | No GPU | Via bpy API |
 | HY-Motion | Long-running GPU worker | 1 GPU (24GB) | Dedicated GPU, stays loaded |
+| rembg | CPU worker (或共享 GPU worker) | 可选 GPU 加速 | `pip install rembg`, ONNX Runtime |
+| Real-ESRGAN | CPU/GPU worker | 可选 GPU 加速 | `pip install realesrgan`, PyTorch |
 
 ### GPU Scheduling
 
@@ -333,6 +420,19 @@ Performance:
 - Models >50K faces: server-side LOD preview, full model on demand
 - 500K faces: BatchedMesh to reduce draw calls
 - Draco geometry + KTX2 texture compression
+
+## 2D Asset Viewer
+
+### Tech: Plain React + Canvas
+
+Features:
+- 透明棋盘格背景（预览去背景效果）
+- 缩放 / 原始尺寸 / 适配窗口
+- 去背景前后对比（左右滑动分割线）
+- Sprite Sheet 帧播放 + 帧序号显示
+- 9-Patch 拉伸标记可视化
+- 多尺寸同屏对比（64 / 128 / 256 / 512 并排展示）
+- 元数据叠加（尺寸、文件大小、DPI、用途类型）
 
 ---
 
@@ -547,7 +647,7 @@ Guides AI agents to construct effective prompts for the art pipeline, including 
 
 ## Roadmap
 
-### Phase 1 — MVP: Prompt → 3D Static Model (6-8 weeks)
+### Phase 1 — MVP: Prompt → 3D Static Model + 2D Art (6-8 weeks)
 
 ```
 Week 1-2: Infrastructure
@@ -555,20 +655,24 @@ Week 1-2: Infrastructure
   ├── Docker Compose (all worker containers)
   └── Celery task queue framework
 
-Week 3-4: Pipeline Stage 1-4
-  ├── Stage 1: SDXL text-to-image (candidate concept images)
+Week 3-4: Pipeline Stage 1-4 (3D) + Stage 1-3 (2D)
+  ├── Stage 1: SDXL text-to-image (candidate concept images) [共享]
   ├── Stage 2: TripoSR image-to-3D
   ├── Stage 3: Instant Meshes cleanup
-  └── Stage 4: xatlas UV + bpy material baking
+  ├── Stage 4: xatlas UV + bpy material baking
+  ├── 2D Stage 2: rembg 去背景 + 尺寸标准化
+  └── 2D Stage 3: PNG / Sprite Sheet / 9-Patch 产出
 
 Week 5-6: Web UI
-  ├── Single-page workflow UI (prompt + params + 3D preview + timeline)
+  ├── Single-page workflow UI (prompt + resource type switch + params + preview + timeline)
   ├── R3F 3D viewer (GLB, rotate/zoom, wireframe)
+  ├── 2D image viewer (棋盘格背景, 缩放, 去背景对比)
   ├── WebSocket streaming of intermediate results
-  └── Asset list page (browse, search, tags)
+  └── Asset list page (browse, search, filter by 3D/2D type)
 
 Week 7-8: Export + Review
-  ├── FBX/GLB/Unity folder export
+  ├── FBX/GLB/Unity folder export (3D)
+  ├── PNG / Sprite Sheet / 9-Patch export (2D)
   ├── Review approval workflow
   └── Basic RBAC permissions
 ```
