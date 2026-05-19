@@ -19,13 +19,14 @@ elif _MODE == "cloud":
     import app.workers.stage_processors.image_to_3d_cloud
     import app.workers.stage_processors.cleanup
     import app.workers.stage_processors.uv_material
+    import app.workers.stage_processors.rig
+    import app.workers.stage_processors.animate
 
     try:
-        import bpy  # noqa: F401
-        import app.workers.stage_processors.rig
-        import app.workers.stage_processors.animate
+        import app.workers.stage_processors.postprocess_2d
+        import app.workers.stage_processors.format_output_2d
     except ImportError:
-        logger.warning("bpy not available — rig/animate stages will use mock processors")
+        logger.warning("2D postprocessing dependencies not available — using mock processors")
 
 else:
     # _MODE == "local": self-hosted GPU inference
@@ -38,15 +39,16 @@ else:
 
     import app.workers.stage_processors.cleanup
     import app.workers.stage_processors.uv_material
-
-    try:
-        import bpy  # noqa: F401
-        import app.workers.stage_processors.rig
-        import app.workers.stage_processors.animate
-    except ImportError:
-        logger.warning("bpy not available — rig/animate stages will use mock processors")
+    import app.workers.stage_processors.rig
+    import app.workers.stage_processors.animate
 
     try:
         import app.workers.stage_processors.image_captioning
     except ImportError:
         logger.warning("image_captioning dependencies not available")
+
+    try:
+        import app.workers.stage_processors.postprocess_2d
+        import app.workers.stage_processors.format_output_2d
+    except ImportError:
+        logger.warning("2D postprocessing dependencies not available — using mock processors")

@@ -75,16 +75,29 @@ def _run_pymeshlab_cleanup(
     current_faces = ms.current_mesh().face_number()
     if current_faces > target_faces:
         ratio = target_faces / current_faces
+        decimation_filter = (
+            "meshing_decimation_quadric_edge_collapse_with_texture"
+            if ms.current_mesh().has_wedge_tex_coord()
+            else "meshing_decimation_quadric_edge_collapse"
+        )
         ms.apply_filter(
-            "meshing_decimation_quadric_edge_collapse_with_texture",
+            decimation_filter,
             targetfacenum=int(current_faces * ratio),
-            preservetopology=True,
         )
 
     if smooth_iterations > 0:
         ms.apply_filter("apply_coord_laplacian_smoothing", stepsmoothnum=smooth_iterations)
 
-    ms.save_current_mesh(output_path)
+    output_ext = os.path.splitext(output_path)[1].lower()
+    if output_ext in (".glb", ".gltf"):
+        ply_tmp = output_path.rsplit(".", 1)[0] + "_tmp.ply"
+        ms.save_current_mesh(ply_tmp)
+        cleaned = trimesh.load(ply_tmp, force="mesh")
+        cleaned.export(output_path, file_type="glb")
+        os.remove(ply_tmp)
+    else:
+        ms.save_current_mesh(output_path)
+
     logger.info("pymeshlab: saved to %s", output_path)
 
 

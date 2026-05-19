@@ -1,16 +1,61 @@
-"""Animation processors — Mixamo BVH presets + HY-Motion self-hosted."""
+"""Animation processors — Mixamo BVH presets + HY-Motion self-hosted.
+
+Uses ``blender --background --python`` subprocess instead of in-process bpy,
+so the host Python (3.12) does not need bpy support.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-
-import bpy
+import shutil
+import subprocess
 
 from app.pipeline.processor import PipelineProcessor
 from app.pipeline.registry import register
 
 logger = logging.getLogger(__name__)
+
+SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "blender_scripts")
+APPLY_ANIM_SCRIPT = os.path.normpath(os.path.join(SCRIPT_DIR, "apply_animation.py"))
+
+BLENDER_TIMEOUT = 300
+
+
+def _run_blender_apply(
+    input_mesh: str,
+    bvh_path: str,
+    output_dir: str,
+    preset: str = "",
+) -> dict:
+    cmd = [
+        "blender", "--background", "--python", APPLY_ANIM_SCRIPT, "--",
+        input_mesh, bvh_path, output_dir,
+    ]
+    if preset:
+        cmd.append(preset)
+
+    logger.info("Blender subprocess: %s", " ".join(cmd))
+
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=BLENDER_TIMEOUT,
+    )
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Blender exited {proc.returncode}: {proc.stderr[-2000:]}"
+        )
+
+    for line in reversed(proc.stdout.strip().splitlines()):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            return json.loads(line)
+
+    raise RuntimeError(f"No JSON output from Blender script. stdout:\n{proc.stdout[-1000:]}")
 
 
 @register
@@ -28,13 +73,18 @@ class MixamoPresetProcessor(PipelineProcessor):
     estimated_duration_s = 5
 
     def can_run(self, input_artifacts: list[dict], config: dict) -> bool:
+        if shutil.which("blender") is None:
+            return False
         has_mesh = any(a.get("file_format") in ("glb", "fbx") for a in input_artifacts)
         has_preset = bool(config.get("animation_preset", "idle"))
         return has_mesh and has_preset
 
     def run(self, input_artifacts: list[dict], config: dict, output_dir: str) -> list[dict]:
         preset = config.get("animation_preset", "idle")
-        presets_dir = config.get("presets_dir", os.environ.get("MIXAMO_PRESETS_DIR", "/data/resources/presets"))
+        presets_dir = config.get(
+            "presets_dir",
+            os.environ.get("MIXAMO_PRESETS_DIR", "/data/resources/presets"),
+        )
         bvh_path = os.path.join(presets_dir, f"{preset}.bvh")
 
         if not os.path.exists(bvh_path):
@@ -52,61 +102,26 @@ class MixamoPresetProcessor(PipelineProcessor):
 
         input_path = mesh_artifact.get("_local_path") or mesh_artifact.get("local_path")
 
-        bpy.ops.object.select_all(action="SELECT")
-        bpy.ops.object.delete()
-
-        ext = os.path.splitext(input_path)[1].lower()
-        if ext == ".glb":
-            bpy.ops.import_scene.gltf(filepath=input_path)
-        elif ext == ".fbx":
-            bpy.ops.import_scene.fbx(filepath=input_path)
-        else:
-            raise ValueError(f"Unsupported mesh format: {ext}")
-
-        obj = bpy.context.selected_objects[0]
-        bpy.context.view_layer.objects.active = obj
-
-        try:
-            bpy.ops.import_anim.bvh(filepath=bvh_path, target="ARMATURE", scale_duration=1.0)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to import BVH '{preset}': {exc}") from exc
-
-        if obj.animation_data is None:
-            obj.animation_data_create()
-        src = bpy.context.selected_objects[0]
-        if src.animation_data and src.animation_data.action:
-            obj.animation_data.action = src.animation_data.action
-
-        output_glb = os.path.join(output_dir, f"animated_{preset}.glb")
-        bpy.ops.export_scene.gltf(
-            filepath=output_glb,
-            export_format="GLB",
-            export_animations=True,
-            export_skins=True,
-            export_bones=True,
-        )
-
-        output_fbx = os.path.join(output_dir, f"animated_{preset}.fbx")
-        bpy.ops.export_scene.fbx(
-            filepath=output_fbx,
-            use_selection=False,
-            bake_anim=True,
-            armature_type="EXPORT",
-        )
+        result = _run_blender_apply(input_path, bvh_path, output_dir, preset=preset)
 
         logger.info("Mixamo preset '%s' applied", preset)
 
         artifacts = [
             {
-                "local_path": output_glb,
+                "local_path": result["glb_path"],
                 "file_format": "glb",
                 "content_type": "model/gltf-binary",
-                "metadata": {"animation_preset": preset, "animation_clips": 1, "generator": "mixamo_preset"},
+                "metadata": {
+                    "animation_preset": preset,
+                    "animation_clips": 1,
+                    "generator": "mixamo_preset",
+                },
             }
         ]
-        if os.path.exists(output_fbx):
+        fbx_path = result.get("fbx_path")
+        if fbx_path and os.path.exists(fbx_path):
             artifacts.append({
-                "local_path": output_fbx,
+                "local_path": fbx_path,
                 "file_format": "fbx",
                 "content_type": "application/octet-stream",
                 "metadata": {"format": "unity_fbx_with_animation"},
@@ -137,6 +152,8 @@ class HYMotionSelfHostedProcessor(PipelineProcessor):
         self._model = None
 
     def can_run(self, input_artifacts: list[dict], config: dict) -> bool:
+        if shutil.which("blender") is None:
+            return False
         has_mesh = any(a.get("file_format") in ("glb", "fbx") for a in input_artifacts)
         has_prompt = bool(config.get("animation_prompt") or config.get("prompt"))
         return has_mesh and has_prompt
@@ -171,44 +188,13 @@ class HYMotionSelfHostedProcessor(PipelineProcessor):
         else:
             bvh_path = self._generate_inline(prompt, num_frames, fps, output_dir)
 
-        bpy.ops.object.select_all(action="SELECT")
-        bpy.ops.object.delete()
-
-        ext = os.path.splitext(input_path)[1].lower()
-        if ext == ".glb":
-            bpy.ops.import_scene.gltf(filepath=input_path)
-        elif ext == ".fbx":
-            bpy.ops.import_scene.fbx(filepath=input_path)
-
-        obj = bpy.context.selected_objects[0]
-        bpy.context.view_layer.objects.active = obj
-
-        try:
-            bpy.ops.import_anim.bvh(filepath=bvh_path, target="ARMATURE")
-        except Exception as exc:
-            logger.warning("BVH import warning: %s", exc)
-
-        output_glb = os.path.join(output_dir, "animated_output.glb")
-        bpy.ops.export_scene.gltf(
-            filepath=output_glb,
-            export_format="GLB",
-            export_animations=True,
-            export_skins=True,
-        )
-
-        output_fbx = os.path.join(output_dir, "animated_output.fbx")
-        bpy.ops.export_scene.fbx(
-            filepath=output_fbx,
-            use_selection=False,
-            bake_anim=True,
-            armature_type="EXPORT",
-        )
+        result = _run_blender_apply(input_path, bvh_path, output_dir)
 
         logger.info("HY-Motion generated animation for '%s…'", prompt[:50])
 
         artifacts = [
             {
-                "local_path": output_glb,
+                "local_path": result["glb_path"],
                 "file_format": "glb",
                 "content_type": "model/gltf-binary",
                 "metadata": {
@@ -218,18 +204,21 @@ class HYMotionSelfHostedProcessor(PipelineProcessor):
                     "generator": "hy_motion_self_hosted",
                 },
             },
-            {
-                "local_path": output_fbx,
+        ]
+        fbx_path = result.get("fbx_path")
+        if fbx_path:
+            artifacts.append({
+                "local_path": fbx_path,
                 "file_format": "fbx",
                 "content_type": "application/octet-stream",
                 "metadata": {"format": "unity_fbx_with_animation"},
-            },
-        ]
+            })
 
         return artifacts
 
     def _generate_inline(self, prompt: str, num_frames: int, fps: int, output_dir: str) -> str:
         import uuid
+
         import torch
 
         if self._model is None:

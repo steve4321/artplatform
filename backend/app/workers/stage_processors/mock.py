@@ -271,3 +271,106 @@ class MockAnimate(MockPipelineProcessor):
                 "metadata": {"animation_clips": 1, "generator": "mock"},
             }
         ]
+
+
+@register
+class MockPostprocess2D(MockPipelineProcessor):
+    stage = "postprocess_2d"
+    name = "rembg_esrgan_mock"
+
+    def _produce_output(self, input_artifacts, config, output_dir):
+        target_size = config.get("target_size", "512x512")
+        remove_bg = config.get("remove_background", True)
+        upscale = config.get("upscale_factor", 1)
+
+        image_artifacts = [
+            a for a in input_artifacts if a.get("file_format") in ("png", "jpg", "jpeg", "webp")
+        ]
+        if not image_artifacts:
+            image_artifacts = [{"file_format": "png"}] if not input_artifacts else input_artifacts
+
+        results = []
+        for idx in range(max(len(image_artifacts), 1)):
+            path = os.path.join(output_dir, f"postprocessed_{idx}.png")
+            _write_fake_image(path, 512, 512)
+            results.append({
+                "local_path": path,
+                "file_format": "png",
+                "content_type": "image/png",
+                "metadata": {
+                    "generator": "mock",
+                    "target_size": target_size,
+                    "remove_background": remove_bg,
+                    "upscale_factor": upscale,
+                    "source_index": idx,
+                },
+            })
+        logger.info("MockPostprocess2D: produced %d images", len(results))
+        return results
+
+
+@register
+class MockFormatOutput2D(MockPipelineProcessor):
+    stage = "format_output_2d"
+    name = "png_sprite_9patch_mock"
+
+    def _produce_output(self, input_artifacts, config, output_dir):
+        output_type = config.get("output_type", "png")
+        padding = config.get("padding", 0)
+
+        image_artifacts = [
+            a for a in input_artifacts if a.get("file_format") in ("png", "jpg", "jpeg", "webp")
+        ]
+        if not image_artifacts:
+            image_artifacts = [{"file_format": "png"}] if not input_artifacts else input_artifacts
+
+        results = []
+        if output_type == "sprite_sheet":
+            sheet_path = os.path.join(output_dir, "sprite_sheet.png")
+            _write_fake_image(sheet_path, 512, 256)
+            results.append({
+                "local_path": sheet_path,
+                "file_format": "png",
+                "content_type": "image/png",
+                "metadata": {
+                    "generator": "mock",
+                    "output_type": "sprite_sheet",
+                    "frame_count": len(image_artifacts) or 1,
+                },
+            })
+            import json as _json
+            atlas_path = os.path.join(output_dir, "sprite_atlas.json")
+            with open(atlas_path, "w") as f:
+                _json.dump({"frames": [], "meta": {"image": "sprite_sheet.png"}}, f)
+            results.append({
+                "local_path": atlas_path,
+                "file_format": "json",
+                "content_type": "application/json",
+                "metadata": {"generator": "mock", "output_type": "sprite_atlas"},
+            })
+        elif output_type == "9patch":
+            path = os.path.join(output_dir, "output.9.png")
+            _write_fake_image(path, 514, 514)
+            results.append({
+                "local_path": path,
+                "file_format": "png",
+                "content_type": "image/png",
+                "metadata": {"generator": "mock", "output_type": "9patch"},
+            })
+        else:
+            for idx in range(max(len(image_artifacts), 1)):
+                path = os.path.join(output_dir, f"output_{idx}.png")
+                _write_fake_image(path, 512, 512)
+                results.append({
+                    "local_path": path,
+                    "file_format": "png",
+                    "content_type": "image/png",
+                    "metadata": {
+                        "generator": "mock",
+                        "output_type": "png",
+                        "index": idx,
+                    },
+                })
+
+        logger.info("MockFormatOutput2D: produced %d artifacts as '%s'", len(results), output_type)
+        return results

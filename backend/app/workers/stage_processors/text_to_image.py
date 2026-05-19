@@ -47,7 +47,17 @@ def _load_pipeline(model_id: str):
         torch_dtype=dtype,
         variant="fp16" if dtype == torch.float16 else None,
     )
-    pipe = pipe.to(device)
+
+    if device == "cuda":
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        if vram_gb < 16:
+            # Low VRAM: offload UNet/VAE to CPU when not in use (~4 GB peak)
+            logger.info("Low VRAM (%.0f GB): enabling sequential CPU offload", vram_gb)
+            pipe.enable_sequential_cpu_offload()
+        else:
+            pipe = pipe.to(device)
+    else:
+        pipe = pipe.to(device)
 
     # Keep model on GPU but disable progress bar in production.
     pipe.set_progress_bar_config(disable=True)
@@ -118,6 +128,7 @@ class TextToImageSDXL(PipelineProcessor):
             )
 
         artifacts: list[dict] = []
+        os.makedirs(output_dir, exist_ok=True)
         for idx, image in enumerate(result.images):
             filename = f"sdxl_{idx:03d}.png"
             filepath = os.path.join(output_dir, filename)
