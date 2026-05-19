@@ -1010,12 +1010,6 @@ export default function GeneratePage() {
   }, [fetchPipelineStatus, pollStatus]);
 
   useEffect(() => {
-    if (currentRun?.id) {
-      sessionStorage.setItem('pipelineId', currentRun.id);
-    }
-  }, [currentRun?.id]);
-
-  useEffect(() => {
     if (currentRun && ['completed', 'failed', 'partial'].includes(currentRun.status)) {
       sessionStorage.removeItem('pipelineId');
     }

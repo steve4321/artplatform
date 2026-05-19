@@ -35,18 +35,16 @@ interface PipelineState {
   pollStatus: (pipelineId: string) => void;
   deletePipeline: (pipelineId: string) => Promise<void>;
   retryPipeline: (pipelineId: string) => Promise<void>;
+  _pollIntervalId: ReturnType<typeof setInterval> | null;
+  _pollCount: number;
 }
 
-let pollIntervalId: ReturnType<typeof setInterval> | null = null;
-let pollCount = 0;
 const MAX_POLL_COUNT = 150;
 
-const stopPolling = () => {
-  if (pollIntervalId) {
-    clearInterval(pollIntervalId);
-    pollIntervalId = null;
-  }
-  pollCount = 0;
+const stopPolling = (set: (partial: Partial<PipelineState>) => void, get: () => PipelineState) => {
+  const id = get()._pollIntervalId;
+  if (id) clearInterval(id);
+  set({ _pollIntervalId: null, _pollCount: 0 });
 };
 
 export const usePipelineStore = create<PipelineState>((set, get) => ({
@@ -55,21 +53,24 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   isLoading: false,
   error: null,
   selectedStageIndex: null,
+  _pollIntervalId: null,
+  _pollCount: 0,
 
   startPipeline: async (
     prompt: string,
-    _negativePrompt?: string,
+    negativePrompt?: string,
     stylePreset?: string,
     quality?: string,
     pipelineType: PipelineType = '3d_art',
     config2d?: Pipeline2DConfig
   ) => {
     set({ isLoading: true, error: null });
-    stopPolling();
+    stopPolling(set, get);
 
     try {
       const requestBody: Record<string, unknown> = {
         prompt,
+        negative_prompt: negativePrompt || '',
         config: { stages: {} },
         style_preset: stylePreset || 'realistic',
         quality: quality || 'standard',
@@ -96,18 +97,20 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
         return;
       }
 
-      pollCount = 0;
+      set({ _pollCount: 0 });
       get().pollStatus(pipeline.id);
 
-      pollIntervalId = setInterval(() => {
-        pollCount++;
-        if (pollCount > MAX_POLL_COUNT) {
-          stopPolling();
+      const id = setInterval(() => {
+        const count = get()._pollCount + 1;
+        if (count > MAX_POLL_COUNT) {
+          stopPolling(set, get);
           set({ error: 'Pipeline timed out (no progress for 5 minutes)' });
           return;
         }
+        set({ _pollCount: count });
         get().pollStatus(pipeline.id);
       }, 2000);
+      set({ _pollIntervalId: id });
     } catch (err) {
       set({ isLoading: false, error: 'Failed to start pipeline' });
       throw err;
@@ -127,11 +130,11 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       });
 
       if (isCompleted) {
-        stopPolling();
+        stopPolling(set, get);
       }
     } catch (err) {
       set({ error: 'Failed to fetch pipeline status' });
-      stopPolling();
+      stopPolling(set, get);
     }
   },
 
@@ -140,7 +143,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   resetPipeline: () => {
-    stopPolling();
+    stopPolling(set, get);
     set({ currentRun: null, steps: [], error: null, selectedStageIndex: null });
   },
 
@@ -211,7 +214,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     await client.delete(`/api/v1/pipelines/${pipelineId}`);
     const { currentRun } = get();
     if (currentRun?.id === pipelineId) {
-      stopPolling();
+      stopPolling(set, get);
       set({ currentRun: null, steps: [], error: null, selectedStageIndex: null });
     }
   },
@@ -222,9 +225,17 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       const response = await client.post(`/api/v1/pipelines/${pipelineId}/retry/1`);
       const pipeline = response.data as PipelineRun;
       set({ currentRun: pipeline, steps: pipeline.steps || [], isLoading: false });
-      pollIntervalId = setInterval(() => {
+      const retryId = setInterval(() => {
+        const count = get()._pollCount + 1;
+        if (count > MAX_POLL_COUNT) {
+          stopPolling(set, get);
+          set({ error: 'Pipeline timed out (no progress for 5 minutes)' });
+          return;
+        }
+        set({ _pollCount: count });
         get().pollStatus(pipeline.id);
       }, 2000);
+      set({ _pollIntervalId: retryId, _pollCount: 0 });
     } catch (err) {
       set({ isLoading: false, error: 'Failed to retry pipeline' });
       throw err;

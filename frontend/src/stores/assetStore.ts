@@ -31,6 +31,7 @@ interface AssetState {
   uploadVersion: (assetId: string, file: File) => Promise<AssetVersion>;
   getDownloadUrl: (assetId: string, version: number) => string;
   submitForReview: (assetId: string) => Promise<void>;
+  deleteAsset: (assetId: string) => Promise<void>;
 }
 
 export const useAssetStore = create<AssetState>((set, get) => ({

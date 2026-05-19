@@ -14,6 +14,7 @@ function AssetDetailModal({
   const { getDownloadUrl, submitForReview, deleteAsset } = useAssetStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const latestVersion = asset.versions?.length > 0
     ? asset.versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
@@ -45,11 +46,12 @@ function AssetDetailModal({
   const handleDelete = async () => {
     if (!window.confirm('Delete this asset? This cannot be undone.')) return;
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteAsset(asset.id);
       onClose();
     } catch (err) {
-      console.error('Failed to delete asset:', err);
+      setDeleteError('Failed to delete asset. Please try again.');
     } finally {
       setIsDeleting(false);
     }
@@ -219,9 +221,6 @@ function AssetDetailModal({
                 >
                   Download
                 </button>
-                <button className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium rounded-lg transition-colors">
-                  Edit
-                </button>
                 <button
                   onClick={handleDelete}
                   disabled={isDeleting}
@@ -229,6 +228,7 @@ function AssetDetailModal({
                 >
                   {isDeleting ? 'Deleting...' : 'Delete'}
                 </button>
+                {deleteError && <span className="text-red-400 text-xs">{deleteError}</span>}
                 {asset.state === 'draft' && (
                   <button
                     onClick={handleSubmitForReview}

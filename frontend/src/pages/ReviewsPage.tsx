@@ -25,12 +25,18 @@ function ReviewsPage() {
   }, [fetchReviewQueue]);
 
   const handleReview = async (assetId: string, version: number, decision: string) => {
+    const labels: Record<string, string> = {
+      approved: 'approve',
+      rejected: 'reject',
+      changes_requested: 'request changes for',
+    };
+    if (!window.confirm(`Are you sure you want to ${labels[decision]} this asset?`)) return;
     setSubmitting(assetId);
     try {
       if (decision === 'approved') {
         await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'approved' });
       } else if (decision === 'rejected') {
-        await client.delete(`/api/v1/assets/${assetId}`);
+        await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'rejected' });
       } else if (decision === 'changes_requested') {
         await client.patch(`/api/v1/assets/${assetId}/state`, { state: 'draft' });
       }
