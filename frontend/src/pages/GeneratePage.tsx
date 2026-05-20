@@ -871,10 +871,10 @@ function ResourceTypeSwitcher({
   return (
     <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-lg">
       <button
-        onClick={() => !disabled && onChange('3d_art')}
+        onClick={() => !disabled && onChange('3d_scene')}
         disabled={disabled}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-          pipelineType === '3d_art'
+          pipelineType === '3d_scene'
             ? 'bg-blue-600 text-white'
             : disabled
             ? 'text-gray-600 cursor-not-allowed'
@@ -882,9 +882,25 @@ function ResourceTypeSwitcher({
         }`}
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 7.5l-9-5.25L3 7.5m9 0l9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
         </svg>
-        3D
+        场景
+      </button>
+      <button
+        onClick={() => !disabled && onChange('3d_character')}
+        disabled={disabled}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+          pipelineType === '3d_character'
+            ? 'bg-blue-600 text-white'
+            : disabled
+            ? 'text-gray-600 cursor-not-allowed'
+            : 'text-gray-400 hover:text-gray-200'
+        }`}
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+        角色
       </button>
       <button
         onClick={() => !disabled && onChange('2d_art')}
@@ -912,7 +928,7 @@ export default function GeneratePage() {
   const [negativePrompt, setNegativePrompt] = useState('');
   const [stylePreset, setStylePreset] = useState<StylePreset>('realistic');
   const [quality, setQuality] = useState<QualityLevel>('standard');
-  const [pipelineType, setPipelineType] = useState<PipelineType>('3d_art');
+  const [pipelineType, setPipelineType] = useState<PipelineType>('3d_scene');
 
   const [usageType, setUsageType] = useState<UsageType>('icon');
   const [outputSize, setOutputSize] = useState<OutputSize>('512x512');
@@ -1007,7 +1023,7 @@ export default function GeneratePage() {
           usageType,
         });
       } else {
-        await startPipeline(prompt, negativePrompt, stylePreset, quality, '3d_art');
+        await startPipeline(prompt, negativePrompt, stylePreset, quality, pipelineType);
       }
     } catch (err) {
       console.error('Failed to start pipeline:', err);
@@ -1058,9 +1074,9 @@ export default function GeneratePage() {
           <div>
             <h1 className="text-lg font-bold text-gray-100">Generate</h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              {pipelineType === '3d_art'
-                ? 'Create 3D assets from text prompts'
-                : 'Create 2D art from text prompts'}
+              {pipelineType === '2d_art'
+                ? 'Create 2D art from text prompts'
+                : 'Create 3D assets from text prompts'}
             </p>
           </div>
           <ResourceTypeSwitcher
@@ -1083,7 +1099,7 @@ export default function GeneratePage() {
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left: Config */}
         <div className="w-72 p-3 overflow-y-auto border-r border-gray-800 flex-none">
-          {pipelineType === '3d_art' ? (
+          {pipelineType !== '2d_art' ? (
             <ConfigPanel3D
               prompt={prompt}
               onPromptChange={setPrompt}
@@ -1123,13 +1139,13 @@ export default function GeneratePage() {
         {/* Center: Preview + Actions */}
         <div className="flex-1 p-3 flex flex-col gap-3 min-w-0">
           <div className="flex-1 min-h-0">
-            {pipelineType === '3d_art' ? (
+            {pipelineType !== '2d_art' ? (
               <PreviewPanel3D modelUrl={modelUrl} currentStep={currentStep} />
             ) : (
               <PreviewPanel2D imageUrls={imageUrls} currentStep={currentStep} />
             )}
           </div>
-          {pipelineType === '3d_art' ? (
+          {pipelineType !== '2d_art' ? (
             <ActionBar3D modelUrl={modelUrl} isBusy={isBusy} />
           ) : (
             <ActionBar2D imageUrls={imageUrls} outputFormat={outputFormat} isBusy={isBusy} />

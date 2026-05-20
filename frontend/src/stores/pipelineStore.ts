@@ -61,7 +61,7 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
     negativePrompt?: string,
     stylePreset?: string,
     quality?: string,
-    pipelineType: PipelineType = '3d_art',
+    pipelineType: PipelineType = '3d_scene',
     config2d?: Pipeline2DConfig
   ) => {
     set({ isLoading: true, error: null });

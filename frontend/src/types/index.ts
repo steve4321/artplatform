@@ -115,7 +115,7 @@ export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipp
 
 export type StylePreset = 'realistic' | 'anime' | 'cartoon' | 'fantasy' | 'sci-fi';
 export type QualityLevel = 'draft' | 'standard' | 'high';
-export type PipelineType = '3d_art' | '2d_art';
+export type PipelineType = '3d_scene' | '3d_character' | '2d_art';
 
 export type UsageType = 'icon' | 'portrait' | 'card' | 'background' | 'sprite';
 export type OutputSize = '64x64' | '128x128' | '256x256' | '512x512' | '1024x1024';
