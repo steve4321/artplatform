@@ -43,9 +43,29 @@
 
 ## Pipeline Design
 
-### End-to-End Flow
+### 3D Pipeline
+
+**场景流程（4 阶段）** — 用于环境、道具等不需要骨骼动画的对象：
 
 ```
+Stage 1: 文生图 (SDXL)         → 2-4 张概念图 (PNG)
+Stage 2: 图生 3D (TripoSR)    → 粗糙 3D 网格 (GLB)
+Stage 3: 网格清理 (Instant Meshes) → 干净的拓扑网格 (GLB)
+Stage 4: UV + 材质烘焙        → 带 PBR 纹理的网格 (GLB + PNG)
+```
+
+**角色流程（5 阶段）** — 用于角色，含骨骼绑定（动画阶段已跳过）：
+
+```
+Stage 1: 文生图 (SDXL)         → 2-4 张概念图 (PNG)
+         ↓ [人工审核 — 概念图暂停点]
+Stage 2: 图生 3D (TripoSR)    → 粗糙 3D 网格 (GLB)
+Stage 3: 网格清理 (Instant Meshes) → 干净的拓扑网格 (GLB)
+Stage 4: UV + 材质烘焙        → 带 PBR 纹理的网格 (GLB + PNG)
+Stage 5: 骨骼绑定 (Rigify)    → 带骨骼的蒙皮网格 (GLB)
+```
+
+> 动画生成阶段（HY-Motion 1.0 Lite）已跳过，需要 24GB VRAM。
 用户输入: "一个穿铠甲的奇幻女战士，手持长剑"
               │
               ▼
@@ -130,7 +150,7 @@
 **与 3D 管线的关系：**
 - 共享 Stage 1 的 SDXL Worker（文生图能力复用）
 - 共享资产管理体系（版本、审批、权限、导出）
-- `pipeline_runs` 表通过 `pipeline_type` 字段区分 `3d_full` / `2d_art`
+- `pipeline_runs` 表通过 `pipeline_type` 字段区分 `3d_scene` / `3d_character` / `2d_art`
 - 独立的阶段处理器，互不影响
 
 ### UX: Single-Page Progressive Workflow
@@ -268,8 +288,8 @@ CREATE TABLE asset_dependencies (
 CREATE TABLE pipeline_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id UUID NOT NULL REFERENCES assets(id),
-    pipeline_type TEXT NOT NULL DEFAULT '3d_full' CHECK (
-        '3d_full','2d_art'
+    pipeline_type TEXT NOT NULL DEFAULT '3d_scene' CHECK (
+        '3d_scene','3d_character','3d_art','2d_art'
     ),
     prompt TEXT NOT NULL,
     reference_image_key TEXT,
