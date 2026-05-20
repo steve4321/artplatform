@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-_RUN_STATUSES = ("pending", "running", "completed", "partial", "failed")
+_RUN_STATUSES = ("pending", "running", "paused", "completed", "partial", "failed")
 _STEP_STATUSES = ("pending", "running", "completed", "failed", "skipped")
 
 

@@ -281,6 +281,51 @@ async def delete_pipeline(
     await db.commit()
 
 
+@router.post("/{pipeline_id}/resume")
+async def resume_pipeline(
+    pipeline_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(get_current_user),
+    selected_image_index: int = Query(0, ge=0, description="Index of the selected concept image (0-based)"),
+) -> PipelineResponse:
+    """Resume a paused pipeline from stage 2 using the selected concept image.
+
+    After text_to_image completes, the pipeline pauses for human review.
+    User picks the best concept image and calls this endpoint to continue.
+    """
+    stmt = (
+        select(PipelineRun)
+        .where(PipelineRun.id == pipeline_id)
+        .options(selectinload(PipelineRun.steps))
+    )
+    result = await db.execute(stmt)
+    pipeline_run = result.scalar_one_or_none()
+    if pipeline_run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pipeline run not found")
+
+    if pipeline_run.status != "paused":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Pipeline is not paused (status={pipeline_run.status})",
+        )
+
+    updated_config = dict(pipeline_run.config)
+    updated_config["selected_image_index"] = selected_image_index
+    pipeline_run.config = updated_config
+    await db.commit()
+
+    from app.pipeline.runner import resume_pipeline as celery_resume
+    celery_resume.delay(str(pipeline_id))
+
+    stmt = (
+        select(PipelineRun)
+        .where(PipelineRun.id == pipeline_id)
+        .options(selectinload(PipelineRun.steps))
+    )
+    result = await db.execute(stmt)
+    return PipelineResponse.model_validate(result.scalar_one())
+
+
 @router.post("/{pipeline_id}/retry/{stage_order}", response_model=PipelineResponse)
 async def retry_stage(
     pipeline_id: UUID,

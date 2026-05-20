@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 class PipelineStatus(str, enum.Enum):
     pending = "pending"
     running = "running"
+    paused = "paused"
     completed = "completed"
     partial = "partial"
     failed = "failed"
