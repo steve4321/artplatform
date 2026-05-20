@@ -44,7 +44,7 @@ class PipelineCreate(BaseModel):
     reference_image_key: str | None = None
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     asset_id: UUID | None = None
-    pipeline_type: str = Field(default="3d_art", pattern=r"^(3d_art|2d_art)$")
+    pipeline_type: str = Field(default="3d_art", pattern=r"^(3d_scene|3d_character|3d_art|2d_art)$")
 
 
 class PipelineStepResponse(BaseModel):

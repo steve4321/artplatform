@@ -40,6 +40,7 @@ _PROCESSOR_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
 _EAGER_EXECUTION = _LOCAL_DEV or _PROCESSOR_MODE in ("mock", "local")
 
 if _PROCESSOR_MODE == "mock":
+    # Legacy 3D pipeline (full 6 stages with rig + animate)
     PIPELINE_STAGES = [
         {"stage": "text_to_image", "processor_name": "sdxl_mock"},
         {"stage": "image_to_3d", "processor_name": "triposr_mock"},
@@ -47,6 +48,21 @@ if _PROCESSOR_MODE == "mock":
         {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
         {"stage": "rig", "processor_name": "rigify_mock"},
         {"stage": "animate", "processor_name": "hy_motion_mock"},
+    ]
+    # 3D scene pipeline (4 stages, no rig)
+    PIPELINE_STAGES_SCENE = [
+        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
+        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
+        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
+    ]
+    # 3D character pipeline (5 stages, with rig)
+    PIPELINE_STAGES_CHARACTER = [
+        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
+        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
+        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
+        {"stage": "rig", "processor_name": "rigify_mock"},
     ]
     PIPELINE_STAGES_2D = [
         {"stage": "text_to_image", "processor_name": "sdxl_mock"},
@@ -62,6 +78,19 @@ elif _PROCESSOR_MODE == "cloud":
         {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
         {"stage": "animate", "processor_name": "mixamo_preset" if _HAS_BLENDER else "hy_motion_mock"},
     ]
+    PIPELINE_STAGES_SCENE = [
+        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
+        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+    ]
+    PIPELINE_STAGES_CHARACTER = [
+        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
+        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
+    ]
     PIPELINE_STAGES_2D = [
         {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
         {"stage": "postprocess_2d", "processor_name": "rembg_esrgan"},
@@ -69,6 +98,19 @@ elif _PROCESSOR_MODE == "cloud":
     ]
 else:
     PIPELINE_STAGES = [
+        {"stage": "text_to_image", "processor_name": "sdxl"},
+        {"stage": "image_to_3d", "processor_name": "triposr"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
+    ]
+    PIPELINE_STAGES_SCENE = [
+        {"stage": "text_to_image", "processor_name": "sdxl"},
+        {"stage": "image_to_3d", "processor_name": "triposr"},
+        {"stage": "cleanup", "processor_name": "instant_meshes"},
+        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
+    ]
+    PIPELINE_STAGES_CHARACTER = [
         {"stage": "text_to_image", "processor_name": "sdxl"},
         {"stage": "image_to_3d", "processor_name": "triposr"},
         {"stage": "cleanup", "processor_name": "instant_meshes"},
@@ -105,7 +147,7 @@ async def create_pipeline(
                 detail="Referenced asset not found",
             )
     else:
-        asset_type = AssetType.model_3d.value if payload.pipeline_type == "3d_art" else AssetType.texture_2d.value
+        asset_type = AssetType.model_3d.value if payload.pipeline_type in ("3d_art", "3d_scene", "3d_character") else AssetType.texture_2d.value
         asset = Asset(
             team_id=current_user.team_id,
             created_by=current_user.id,
@@ -120,7 +162,14 @@ async def create_pipeline(
         db.add(asset)
         await db.flush()
 
-    stages = PIPELINE_STAGES_2D if payload.pipeline_type == "2d_art" else PIPELINE_STAGES
+    if payload.pipeline_type == "2d_art":
+        stages = PIPELINE_STAGES_2D
+    elif payload.pipeline_type == "3d_scene":
+        stages = PIPELINE_STAGES_SCENE
+    elif payload.pipeline_type == "3d_character":
+        stages = PIPELINE_STAGES_CHARACTER
+    else:  # legacy 3d_art maps to character pipeline
+        stages = PIPELINE_STAGES_CHARACTER
     config_dict = payload.config.model_dump()
     pipeline = PipelineRun(
         asset_id=asset.id,

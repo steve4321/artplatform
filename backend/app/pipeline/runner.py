@@ -117,6 +117,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
             return
 
         carry_over_artifacts: list[dict] = []
+        concept_image_artifacts: list[dict] = []
         if pipeline_run.reference_image_key:
             carry_over_artifacts.append({
                 "storage_key": pipeline_run.reference_image_key,
@@ -139,6 +140,10 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
                 try:
                     local_inputs = _download_artifacts(storage, carry_over_artifacts, work_dir)
 
+                    if step.stage == "uv_material" and concept_image_artifacts:
+                        concept_local = _download_artifacts(storage, concept_image_artifacts, work_dir)
+                        local_inputs.extend(concept_local)
+
                     if not processor.can_run(local_inputs, stage_config):
                         step.status = "skipped"
                         step.error_message = "Preconditions not met"
@@ -157,6 +162,18 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
                     step.duration_ms = elapsed_ms
                     step.output_artifact_ids = [a["storage_key"] for a in uploaded]
                     session.commit()
+
+                    if step.stage == "text_to_image" and not concept_image_artifacts:
+                        for a in uploaded:
+                            if a.get("file_format") == "png":
+                                concept_image_artifacts.append({
+                                    **a,
+                                    "metadata": {
+                                        **a.get("metadata", {}),
+                                        "source": "concept_image",
+                                        "stage": "text_to_image",
+                                    },
+                                })
 
                     carry_over_artifacts = uploaded
                     last_successful_step = step
@@ -183,17 +200,26 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
         if carry_over_artifacts and pipeline_run.asset and last_successful_step and last_successful_step.output_artifact_ids:
             asset = pipeline_run.asset
             version_number = asset.current_version or 1
+            # Find the primary model file (GLB) — skip texture PNGs to avoid UNIQUE constraint
+            model_extensions = {"glb", "gltf", "fbx", "obj", "ply"}
+            primary_key = None
             for storage_key in last_successful_step.output_artifact_ids:
-                ext = os.path.splitext(storage_key)[1].lstrip(".").lower() or "bin"
-                version = AssetVersion(
-                    asset_id=asset.id,
-                    version=version_number,
-                    storage_key=storage_key,
-                    file_format=ext,
-                    source_type="ai_pipeline",
-                    pipeline_run_id=pipeline_run.id,
-                )
-                session.add(version)
+                ext = os.path.splitext(storage_key)[1].lstrip(".").lower()
+                if ext in model_extensions:
+                    primary_key = storage_key
+                    break
+            if primary_key is None:
+                primary_key = last_successful_step.output_artifact_ids[0]
+            ext = os.path.splitext(primary_key)[1].lstrip(".").lower() or "bin"
+            version = AssetVersion(
+                asset_id=asset.id,
+                version=version_number,
+                storage_key=primary_key,
+                file_format=ext,
+                source_type="ai_pipeline",
+                pipeline_run_id=pipeline_run.id,
+            )
+            session.add(version)
 
         session.commit()
 

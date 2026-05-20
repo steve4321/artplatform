@@ -12,8 +12,8 @@ async def test_create_pipeline(client, auth_headers):
     data = resp.json()
     assert data["prompt"] == "A low-poly knight character with sword"
     assert data["status"] == "pending"
-    assert data["total_stages"] == 6
-    assert len(data["steps"]) == 6
+    assert data["total_stages"] == 5
+    assert len(data["steps"]) == 5
 
     stages = [s["stage"] for s in data["steps"]]
     assert stages == [
@@ -22,7 +22,6 @@ async def test_create_pipeline(client, auth_headers):
         "cleanup",
         "uv_material",
         "rig",
-        "animate",
     ]
 
 
@@ -58,7 +57,7 @@ async def test_get_pipeline_by_id(client, auth_headers):
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == pipeline_id
-    assert len(data["steps"]) == 6
+    assert len(data["steps"]) == 5
 
 
 @pytest.mark.asyncio
