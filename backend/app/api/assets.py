@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from typing import Annotated
 from uuid import UUID
@@ -15,7 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
-from app.models import Asset, AssetVersion, User
+from app.models import Asset, AssetVersion, PipelineStep, User
 from app.schemas.asset import (
     AssetCreate,
     AssetListResponse,
@@ -268,6 +269,61 @@ async def delete_asset(
     return {"deleted": str(asset_id)}
 
 
+# ── Texture routes ────────────────────────────────────────────────────────
+
+
+@router.get("/{asset_id}/textures")
+async def get_asset_textures(
+    asset_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: User = Depends(get_current_user),
+) -> list[dict[str, str]]:
+    """List texture files for the asset's latest version.
+
+    Finds the uv_material pipeline step's output_artifact_ids that are PNG files
+    and returns them with their storage keys and texture types.
+    """
+    asset = await _load_asset_or_404(db, asset_id)
+    latest = max(asset.versions, key=lambda v: v.version) if asset.versions else None
+    if latest is None or latest.pipeline_run_id is None:
+        return []
+
+    stmt = select(PipelineStep).where(
+        PipelineStep.pipeline_run_id == latest.pipeline_run_id,
+        PipelineStep.stage == "uv_material",
+    )
+    result = await db.execute(stmt)
+    step = result.scalar_one_or_none()
+    if step is None or not step.output_artifact_ids:
+        return []
+
+    png_files = [key for key in step.output_artifact_ids if key.lower().endswith(".png")]
+    png_files.sort(key=lambda k: _get_file_size(k), reverse=True)
+
+    texture_names = ["albedo", "normal", "metallic_roughness"]
+    textures: list[dict[str, str]] = []
+    for idx, key in enumerate(png_files):
+        tex_type = texture_names[idx] if idx < len(texture_names) else f"texture_{idx}"
+        textures.append({
+            "storage_key": key,
+            "texture_type": tex_type,
+            "url": f"/local-storage/{key}",
+        })
+
+    return textures
+
+
+def _get_file_size(storage_key: str) -> int:
+    storage = get_storage()
+    try:
+        path = storage._resolve_path(storage_key) if hasattr(storage, '_resolve_path') else None
+        if path and os.path.isfile(path):
+            return os.path.getsize(path)
+    except Exception:
+        pass
+    return 0
+
+
 # ── Export routes ─────────────────────────────────────────────────────────
 
 
@@ -319,4 +375,6 @@ async def export_fbx(
         url = await svc.export_as_fbx(asset_id, version, db)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
     return {"url": url, "format": "fbx"}

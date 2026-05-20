@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
+import client from '../api/client';
 import { useAssetStore, Asset } from '../stores/assetStore';
 import { AssetGrid, AssetFilters } from '../components/assets';
 import { AssetViewer } from '../components/viewer';
+
+interface TextureInfo {
+  storageKey: string;
+  textureType: string;
+  url: string;
+}
 
 function AssetDetailModal({
   asset,
@@ -15,6 +22,8 @@ function AssetDetailModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [downloadingFbx, setDownloadingFbx] = useState(false);
+  const [textures, setTextures] = useState<TextureInfo[]>([]);
 
   const latestVersion = asset.versions?.length > 0
     ? asset.versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
@@ -23,6 +32,16 @@ function AssetDetailModal({
   const previewUrl = latestVersion?.storageKey
     ? `/local-storage/${latestVersion.storageKey}`
     : null;
+
+  const albedoUrl = textures.find((t) => t.textureType === 'albedo')
+    ? `/local-storage/${textures.find((t) => t.textureType === 'albedo')!.storageKey}`
+    : null;
+
+  useEffect(() => {
+    client.get(`/api/v1/assets/${asset.id}/textures`)
+      .then((resp) => setTextures(resp.data || []))
+      .catch(() => {});
+  }, [asset.id]);
 
   const handleSubmitForReview = async () => {
     setIsSubmitting(true);
@@ -40,6 +59,29 @@ function AssetDetailModal({
     if (latestVersion) {
       const url = getDownloadUrl(asset.id, latestVersion.version);
       window.open(url, '_blank');
+    }
+  };
+
+  const handleDownloadGlb = () => {
+    if (latestVersion?.storageKey) {
+      window.open(`/local-storage/${latestVersion.storageKey}`, '_blank');
+    }
+  };
+
+  const handleDownloadFbx = async () => {
+    if (!latestVersion) return;
+    setDownloadingFbx(true);
+    try {
+      const resp = await client.get(
+        `/api/v1/assets/${asset.id}/export/fbx?version=${latestVersion.version}`
+      );
+      if (resp.data?.url) {
+        window.open(resp.data.url, '_blank');
+      }
+    } catch (err) {
+      console.error('FBX export failed:', err);
+    } finally {
+      setDownloadingFbx(false);
     }
   };
 
@@ -121,32 +163,66 @@ function AssetDetailModal({
 
         <div className="flex-1 overflow-hidden">
           {activeTab === 'preview' ? (
-            <div className="h-full p-4">
-              {previewUrl ? (
-                asset.assetType === 'texture_2d' || asset.assetType === 'sprite' ? (
-                  <div className="h-full flex items-center justify-center overflow-hidden">
+            <div className="h-full flex flex-col p-4">
+              <div className="flex-1 overflow-hidden">
+                {previewUrl ? (
+                  asset.assetType === 'texture_2d' || asset.assetType === 'sprite' ? (
+                    <div className="h-full flex items-center justify-center overflow-hidden">
+                      <img
+                        src={latestVersion?.storageKey ? `/local-storage/${latestVersion.storageKey}` : previewUrl}
+                        alt={asset.name}
+                        className="max-w-full max-h-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <AssetViewer modelUrl={previewUrl} className="w-full h-full" autoPlay />
+                  )
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-600">
+                    <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1}
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                      />
+                    </svg>
+                    <p className="text-gray-500">No preview available</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-800">
+                <button
+                  onClick={handleDownloadGlb}
+                  disabled={!latestVersion}
+                  className="px-3 py-1.5 bg-cyan-700/60 hover:bg-cyan-600/60 disabled:opacity-40 text-cyan-100 text-sm font-medium rounded-lg border border-cyan-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  下载 GLB
+                </button>
+                <button
+                  onClick={handleDownloadFbx}
+                  disabled={!latestVersion || downloadingFbx}
+                  className="px-3 py-1.5 bg-amber-700/60 hover:bg-amber-600/60 disabled:opacity-40 text-amber-100 text-sm font-medium rounded-lg border border-amber-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {downloadingFbx ? '导出中...' : '导出 FBX'}
+                </button>
+                {albedoUrl && (
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Albedo:</span>
                     <img
-                      src={latestVersion?.storageKey ? `/local-storage/${latestVersion.storageKey}` : previewUrl}
-                      alt={asset.name}
-                      className="max-w-full max-h-full object-contain"
+                      src={albedoUrl}
+                      alt="Albedo"
+                      className="w-10 h-10 rounded object-cover border border-gray-700"
                     />
                   </div>
-                ) : (
-                  <AssetViewer modelUrl={previewUrl} className="w-full h-full" autoPlay />
-                )
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-gray-600">
-                  <svg className="w-20 h-20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1}
-                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                    />
-                  </svg>
-                  <p className="text-gray-500">No preview available</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : (
             <div className="h-full overflow-y-auto p-6">
@@ -213,13 +289,36 @@ function AssetDetailModal({
                 </div>
               </div>
 
-              <div className="mt-8 flex gap-3">
+              <div className="mt-8 flex flex-wrap gap-3">
+                <button
+                  onClick={handleDownloadGlb}
+                  disabled={!latestVersion}
+                  className="px-4 py-2 bg-cyan-700/60 hover:bg-cyan-600/60 disabled:opacity-40 text-cyan-100 font-medium rounded-lg border border-cyan-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  下载 GLB
+                </button>
+                <button
+                  onClick={handleDownloadFbx}
+                  disabled={!latestVersion || downloadingFbx}
+                  className="px-4 py-2 bg-amber-700/60 hover:bg-amber-600/60 disabled:opacity-40 text-amber-100 font-medium rounded-lg border border-amber-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {downloadingFbx ? '导出中...' : '导出 FBX'}
+                </button>
                 <button
                   onClick={handleDownload}
                   disabled={!latestVersion}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-1.5"
                 >
-                  Download
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download (presigned)
                 </button>
                 <button
                   onClick={handleDelete}
@@ -239,6 +338,31 @@ function AssetDetailModal({
                   </button>
                 )}
               </div>
+              {textures.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Textures</h4>
+                  <div className="flex gap-4">
+                    {textures.map((tex) => (
+                      <a
+                        key={tex.storageKey}
+                        href={`/local-storage/${tex.storageKey}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex flex-col items-center gap-2"
+                      >
+                        <img
+                          src={`/local-storage/${tex.storageKey}`}
+                          alt={tex.textureType}
+                          className="w-20 h-20 rounded-md object-cover border border-gray-700 group-hover:border-cyan-500/50 transition-colors"
+                        />
+                        <span className="text-xs text-gray-400 group-hover:text-cyan-300 transition-colors">
+                          {tex.textureType.replace('_', ' ')}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

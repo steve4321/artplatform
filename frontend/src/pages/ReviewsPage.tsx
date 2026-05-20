@@ -4,23 +4,51 @@ import type { Asset } from '../types';
 
 const AssetViewer = lazy(() => import('../components/viewer/AssetViewer'));
 
+interface TextureInfo {
+  storageKey: string;
+  textureType: string;
+  url: string;
+}
+
+function useAssetTextures() {
+  const [cache, setCache] = useState<Record<string, TextureInfo[]>>({});
+
+  const fetchTextures = useCallback(async (assetId: string) => {
+    if (cache[assetId]) return cache[assetId];
+    try {
+      const resp = await client.get(`/api/v1/assets/${assetId}/textures`);
+      const textures: TextureInfo[] = resp.data || [];
+      setCache((prev) => ({ ...prev, [assetId]: textures }));
+      return textures;
+    } catch {
+      return [];
+    }
+  }, [cache]);
+
+  return { texturesCache: cache, fetchTextures };
+}
+
 function ReviewsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const [downloadingFbx, setDownloadingFbx] = useState<string | null>(null);
+  const { texturesCache, fetchTextures } = useAssetTextures();
 
   const fetchReviewQueue = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await client.get('/api/v1/assets?state=review&page=1&page_size=50');
-      setAssets(response.data.items || []);
+      const items = response.data.items || [];
+      setAssets(items);
+      items.forEach((a: Asset) => { fetchTextures(a.id); });
     } catch {
       console.error('Failed to fetch review queue');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchTextures]);
 
   useEffect(() => {
     fetchReviewQueue();
@@ -48,6 +76,38 @@ function ReviewsPage() {
     } finally {
       setSubmitting(null);
     }
+  };
+
+  const handleDownloadGlb = (asset: Asset) => {
+    const latest = asset.versions?.[asset.versions.length - 1];
+    if (latest?.storageKey) {
+      window.open(`/local-storage/${latest.storageKey}`, '_blank');
+    }
+  };
+
+  const handleDownloadFbx = async (asset: Asset) => {
+    const latest = asset.versions?.[asset.versions.length - 1];
+    if (!latest) return;
+    setDownloadingFbx(asset.id);
+    try {
+      const resp = await client.get(
+        `/api/v1/assets/${asset.id}/export/fbx?version=${latest.version}`
+      );
+      if (resp.data?.url) {
+        window.open(resp.data.url, '_blank');
+      }
+    } catch (err) {
+      console.error('FBX export failed:', err);
+    } finally {
+      setDownloadingFbx(null);
+    }
+  };
+
+  const getAlbedoUrl = (assetId: string): string | null => {
+    const textures = texturesCache[assetId];
+    if (!textures) return null;
+    const albedo = textures.find((t) => t.textureType === 'albedo');
+    return albedo?.storageKey ? `/local-storage/${albedo.storageKey}` : null;
   };
 
   if (isLoading) {
@@ -118,7 +178,16 @@ function ReviewsPage() {
                     {new Date(asset.createdAt).toLocaleDateString()}
                   </p>
                   <p className="text-gray-300 mt-2 line-clamp-2">{asset.description || 'No description'}</p>
-                  <div className="flex gap-3 mt-4">
+                  {getAlbedoUrl(asset.id) && (
+                    <div className="mt-3">
+                      <img
+                        src={getAlbedoUrl(asset.id)!}
+                        alt="Albedo preview"
+                        className="w-20 h-20 rounded-md object-cover border border-gray-700"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-3 mt-4">
                     <button
                       onClick={() => handleReview(asset.id, 'approved')}
                       disabled={submitting === asset.id}
@@ -140,6 +209,28 @@ function ReviewsPage() {
                     >
                       Request Changes
                     </button>
+                    <div className="flex gap-2 ml-auto items-center">
+                      <button
+                        onClick={() => handleDownloadGlb(asset)}
+                        disabled={!asset.versions?.length}
+                        className="px-3 py-2 bg-cyan-700/60 hover:bg-cyan-600/60 disabled:opacity-40 text-cyan-100 text-xs font-medium rounded-lg border border-cyan-600/40 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        下载 GLB
+                      </button>
+                      <button
+                        onClick={() => handleDownloadFbx(asset)}
+                        disabled={!asset.versions?.length || downloadingFbx === asset.id}
+                        className="px-3 py-2 bg-amber-700/60 hover:bg-amber-600/60 disabled:opacity-40 text-amber-100 text-xs font-medium rounded-lg border border-amber-600/40 transition-colors flex items-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        {downloadingFbx === asset.id ? '导出中...' : '导出 FBX'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -190,6 +281,28 @@ function ReviewsPage() {
             <div className="text-center mt-4">
               <p className="text-gray-300 text-sm">{previewAsset.name}</p>
               <p className="text-gray-500 text-xs mt-1">{previewAsset.description}</p>
+              <div className="flex justify-center gap-3 mt-3">
+                <button
+                  onClick={() => handleDownloadGlb(previewAsset)}
+                  disabled={!previewAsset.versions?.length}
+                  className="px-4 py-2 bg-cyan-700/60 hover:bg-cyan-600/60 disabled:opacity-40 text-cyan-100 text-sm font-medium rounded-lg border border-cyan-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  下载 GLB
+                </button>
+                <button
+                  onClick={() => handleDownloadFbx(previewAsset)}
+                  disabled={!previewAsset.versions?.length || downloadingFbx === previewAsset.id}
+                  className="px-4 py-2 bg-amber-700/60 hover:bg-amber-600/60 disabled:opacity-40 text-amber-100 text-sm font-medium rounded-lg border border-amber-600/40 transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {downloadingFbx === previewAsset.id ? '导出中...' : '导出 FBX'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

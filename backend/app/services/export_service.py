@@ -165,15 +165,20 @@ class ExportService:
                 f.write(glb_data)
 
             script = (
-                "import bpy\n"
+                "import bpy, sys\n"
                 "bpy.ops.wm.read_factory_settings(use_empty=True)\n"
                 f"bpy.ops.import_scene.gltf(filepath=r'{glb_path}')\n"
-                "bpy.ops.export_scene.fbx(\n"
-                f"    filepath=r'{fbx_path}',\n"
-                "    use_selection=False,\n"
-                "    bake_anim=True,\n"
-                "    armature_type='EXPORT',\n"
-                ")\n"
+                "for obj in list(bpy.data.objects):\n"
+                "    if obj.type in ('MESH', 'ARMATURE'):\n"
+                "        obj.select_set(True)\n"
+                "        bpy.context.view_layer.objects.active = obj\n"
+                "    else:\n"
+                "        bpy.data.objects.remove(obj, do_unlink=True)\n"
+                "try:\n"
+                f"    bpy.ops.export_scene.fbx(filepath=r'{fbx_path}', use_selection=True)\n"
+                "except Exception as e:\n"
+                "    print(f'FBX export error: {e}', file=sys.stderr)\n"
+                "    sys.exit(1)\n"
             )
             with open(script_path, "w") as f:
                 f.write(script)
