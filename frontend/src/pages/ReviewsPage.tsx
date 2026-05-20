@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import client from '../api/client';
 import type { Asset } from '../types';
+
+const AssetViewer = lazy(() => import('../components/viewer/AssetViewer'));
 
 function ReviewsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -87,7 +89,14 @@ function ReviewsPage() {
                   className="w-40 h-40 bg-gray-800 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
                   onClick={() => setPreviewAsset(asset)}
                 >
-                  {asset.versions && asset.versions.length > 0 ? (
+                  {asset.assetType === 'model_3d' ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+                      <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                      </svg>
+                      <span className="text-blue-400 text-xs font-medium">3D Model</span>
+                    </div>
+                  ) : asset.versions && asset.versions.length > 0 ? (
                     (() => {
                       const latest = asset.versions[asset.versions.length - 1];
                       const key = latest.storageKeyThumbnail ?? latest.storageKey;
@@ -150,6 +159,22 @@ function ReviewsPage() {
               Close
             </button>
             {(() => {
+              if (previewAsset.assetType === 'model_3d') {
+                const latest = previewAsset.versions?.[previewAsset.versions.length - 1];
+                const modelUrl = latest?.storageKey ? `/local-storage/${latest.storageKey}` : null;
+                if (!modelUrl) return <div className="text-white">No 3D model available</div>;
+                return (
+                  <div className="w-full" style={{ height: '70vh' }}>
+                    <Suspense fallback={
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    }>
+                      <AssetViewer modelUrl={modelUrl} className="w-full h-full" />
+                    </Suspense>
+                  </div>
+                );
+              }
               const latest = previewAsset.versions?.[previewAsset.versions.length - 1];
               const key = latest?.storageKeyThumbnail ?? latest?.storageKey;
               const url = key ? `/local-storage/${key}` : null;
