@@ -20,8 +20,8 @@ function AssetDetailModal({
     ? asset.versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
     : null;
 
-  const previewUrl = latestVersion
-    ? getDownloadUrl(asset.id, latestVersion.version)
+  const previewUrl = latestVersion?.storageKey
+    ? `/local-storage/${latestVersion.storageKey}`
     : null;
 
   const handleSubmitForReview = async () => {
