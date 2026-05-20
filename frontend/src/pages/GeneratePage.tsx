@@ -61,7 +61,7 @@ function StatusBanner({
   progress,
   elapsed,
 }: {
-  status: 'idle' | 'loading' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'loading' | 'running' | 'completed' | 'failed' | 'paused';
   currentStageName?: string;
   progress: number;
   elapsed: number;
@@ -71,6 +71,7 @@ function StatusBanner({
   const colors: Record<string, string> = {
     loading: 'bg-blue-900/60 border-blue-700',
     running: 'bg-blue-900/60 border-blue-700',
+    paused: 'bg-yellow-900/60 border-yellow-700',
     completed: 'bg-green-900/60 border-green-700',
     failed: 'bg-red-900/60 border-red-700',
   };
@@ -78,6 +79,7 @@ function StatusBanner({
   const labels: Record<string, string> = {
     loading: 'Starting pipeline…',
     running: currentStageName ? `Processing: ${currentStageName}` : 'Running…',
+    paused: 'Waiting for concept image selection…',
     completed: 'Pipeline completed',
     failed: 'Pipeline failed',
   };
@@ -91,6 +93,7 @@ function StatusBanner({
       )}
       {status === 'completed' && <span className="text-green-400">✓</span>}
       {status === 'failed' && <span className="text-red-400">✗</span>}
+      {status === 'paused' && <span className="text-yellow-400">⏸</span>}
 
       <span className="text-gray-200 flex-1 truncate">{labels[status]}</span>
 
@@ -951,6 +954,7 @@ export default function GeneratePage() {
     pollStatus,
     deletePipeline,
     retryPipeline,
+    resumePipeline,
   } = usePipelineStore();
 
   const isGenerating = currentRun?.status === 'running' || currentRun?.status === 'pending';
@@ -962,7 +966,17 @@ export default function GeneratePage() {
   const currentStep = selectedStageIndex ?? steps.filter((s) => s.status === 'completed').length - 1;
 
   const [elapsed, setElapsed] = useState(0);
+  const [selectedConceptIndex, setSelectedConceptIndex] = useState(0);
   const startTimeRef = useRef<number | null>(null);
+
+  const conceptImageUrls = useMemo(() => {
+    if (currentRun?.status !== 'paused') return [];
+    const t2iStep = steps.find((s) => s.stage === 'text_to_image' && s.status === 'completed');
+    if (!t2iStep?.outputArtifactIds) return [];
+    return t2iStep.outputArtifactIds
+      .filter((id) => id.endsWith('.png') || id.endsWith('.jpg') || id.endsWith('.jpeg'))
+      .map((id) => `/local-storage/${id}`);
+  }, [currentRun?.status, steps]);
   useEffect(() => {
     if (isBusy && !startTimeRef.current) {
       startTimeRef.current = Date.now();
@@ -991,8 +1005,10 @@ export default function GeneratePage() {
     return ((done + running * 0.5) / stages.length) * 100;
   }, [steps, stages.length]);
 
-  const bannerStatus: 'idle' | 'loading' | 'running' | 'completed' | 'failed' = isPipelineLoading
+  const bannerStatus: 'idle' | 'loading' | 'running' | 'completed' | 'failed' | 'paused' = isPipelineLoading
     ? 'loading'
+    : currentRun?.status === 'paused'
+    ? 'paused'
     : currentRun?.status === 'running' || currentRun?.status === 'pending'
     ? 'running'
     : currentRun?.status === 'completed'
@@ -1029,6 +1045,15 @@ export default function GeneratePage() {
       console.error('Failed to start pipeline:', err);
     }
   }, [prompt, negativePrompt, stylePreset, quality, pipelineType, outputSize, removeBackground, outputFormat, usageType, startPipeline, isBusy]);
+
+  const handleResume = useCallback(async () => {
+    if (!currentRun?.id || isBusy) return;
+    try {
+      await resumePipeline(currentRun.id, selectedConceptIndex);
+    } catch (err) {
+      console.error('Failed to resume pipeline:', err);
+    }
+  }, [currentRun?.id, selectedConceptIndex, resumePipeline, isBusy]);
 
   const handleSelectStage = useCallback(
     (index: number | null) => {
@@ -1139,17 +1164,73 @@ export default function GeneratePage() {
         {/* Center: Preview + Actions */}
         <div className="flex-1 p-3 flex flex-col gap-3 min-w-0">
           <div className="flex-1 min-h-0">
-            {pipelineType !== '2d_art' ? (
+            {currentRun?.status === 'paused' && conceptImageUrls.length > 0 ? (
+              <div className="h-full flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-gray-100 font-semibold">Select a concept image to continue</h3>
+                  <span className="text-gray-400 text-sm">{conceptImageUrls.length} images generated</span>
+                </div>
+                <div className="flex-1 grid grid-cols-2 gap-3 overflow-y-auto">
+                  {conceptImageUrls.map((url, idx) => (
+                    <div
+                      key={idx}
+                      className={`relative rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
+                        selectedConceptIndex === idx
+                          ? 'border-blue-500 ring-2 ring-blue-500/30'
+                          : 'border-gray-700 hover:border-gray-500'
+                      }`}
+                      onClick={() => setSelectedConceptIndex(idx)}
+                    >
+                      <img src={url} alt={`Concept ${idx + 1}`} className="w-full h-full object-cover" />
+                      {selectedConceptIndex === idx && (
+                        <div className="absolute top-2 right-2 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                        <span className="text-white text-xs font-medium">Image {idx + 1}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-gray-800">
+                  <p className="text-gray-400 text-sm">
+                    Selected: <span className="text-gray-200">Image {selectedConceptIndex + 1}</span>
+                  </p>
+                  <button
+                    onClick={handleResume}
+                    disabled={isBusy}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {isBusy ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Continuing...
+                      </>
+                    ) : (
+                      <>
+                        Continue to 3D
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : pipelineType !== '2d_art' ? (
               <PreviewPanel3D modelUrl={modelUrl} currentStep={currentStep} />
             ) : (
               <PreviewPanel2D imageUrls={imageUrls} currentStep={currentStep} />
             )}
           </div>
-          {pipelineType !== '2d_art' ? (
+          {currentRun?.status !== 'paused' && (pipelineType !== '2d_art' ? (
             <ActionBar3D modelUrl={modelUrl} isBusy={isBusy} />
           ) : (
             <ActionBar2D imageUrls={imageUrls} outputFormat={outputFormat} isBusy={isBusy} />
-          )}
+          ))}
         </div>
 
         {/* Right: Timeline */}

@@ -35,6 +35,7 @@ interface PipelineState {
   pollStatus: (pipelineId: string) => void;
   deletePipeline: (pipelineId: string) => Promise<void>;
   retryPipeline: (pipelineId: string) => Promise<void>;
+  resumePipeline: (pipelineId: string, selectedImageIndex: number) => Promise<void>;
   _pollIntervalId: ReturnType<typeof setInterval> | null;
   _pollCount: number;
 }
@@ -236,6 +237,31 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
       set({ _pollIntervalId: retryId, _pollCount: 0 });
     } catch (err) {
       set({ isLoading: false, error: 'Failed to retry pipeline' });
+      throw err;
+    }
+  },
+
+  resumePipeline: async (pipelineId: string, selectedImageIndex: number) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await client.post(
+        `/api/v1/pipelines/${pipelineId}/resume?selected_image_index=${selectedImageIndex}`
+      );
+      const pipeline = response.data as PipelineRun;
+      set({ currentRun: pipeline, steps: pipeline.steps || [], isLoading: false });
+      const intervalId = setInterval(() => {
+        const count = get()._pollCount + 1;
+        if (count > MAX_POLL_COUNT) {
+          stopPolling(set, get);
+          set({ error: 'Pipeline timed out (no progress for 5 minutes)' });
+          return;
+        }
+        set({ _pollCount: count });
+        get().pollStatus(pipeline.id);
+      }, 2000);
+      set({ _pollIntervalId: intervalId, _pollCount: 0 });
+    } catch (err) {
+      set({ isLoading: false, error: 'Failed to resume pipeline' });
       throw err;
     }
   },
