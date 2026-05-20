@@ -8,11 +8,11 @@ test.describe('设置页面', () => {
   });
 
   test('页面标题显示 Settings', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings' }).first()).toBeVisible();
   });
 
   test('Account 区块存在', async ({ page }) => {
-    await expect(page.getByText('Account')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Account' })).toBeVisible();
   });
 
   test('Email 字段存在', async ({ page }) => {

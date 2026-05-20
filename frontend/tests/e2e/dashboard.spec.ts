@@ -8,10 +8,11 @@ test.describe('工作台页面', () => {
   });
 
   test('页面标题显示 Dashboard', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard' }).first()).toBeVisible();
   });
 
   test('显示统计卡片', async ({ page }) => {
+    await page.waitForTimeout(500);
     await expect(page.getByText('Total Assets')).toBeVisible();
     await expect(page.getByText('Pending Reviews')).toBeVisible();
     await expect(page.getByText('Active Pipelines')).toBeVisible();

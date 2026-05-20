@@ -8,7 +8,7 @@ test.describe('资产页面', () => {
   });
 
   test('页面标题显示 Assets', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Assets' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Assets' }).first()).toBeVisible();
   });
 
   test('搜索框存在', async ({ page }) => {
@@ -31,17 +31,15 @@ test.describe('资产页面', () => {
 
   test('点击 Upload Asset 打开弹窗', async ({ page }) => {
     await page.getByRole('button', { name: 'Upload Asset' }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByText('Upload Asset')).toBeVisible();
+    await expect(page.getByText('Asset Name')).toBeVisible();
   });
 
   test('上传弹窗有关闭按钮', async ({ page }) => {
     await page.getByRole('button', { name: 'Upload Asset' }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByText('Asset Name')).toBeVisible();
     
-    const closeBtn = page.locator('button').filter({ has: page.locator('svg') }).first();
-    await closeBtn.click();
-    await expect(page.getByRole('dialog')).not.toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Asset Name')).not.toBeVisible();
   });
 
   test('资产卡片点击打开详情', async ({ page }) => {

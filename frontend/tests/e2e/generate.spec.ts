@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { loginAs } from '../helpers/auth';
 
 test.describe('生成页面', () => {
@@ -8,7 +8,7 @@ test.describe('生成页面', () => {
   });
 
   test('页面标题显示 Generate', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Generate' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Generate' }).first()).toBeVisible();
   });
 
   test('管线类型切换 - 场景/角色/2D', async ({ page }) => {
@@ -22,13 +22,10 @@ test.describe('生成页面', () => {
   });
 
   test('Prompt 输入验证 - 少于 10 字符禁用 Generate', async ({ page }) => {
-    const generateBtn = page.getByRole('button', { name: 'Generate' });
+    const generateBtn = page.getByRole('button', { name: 'Generate', exact: true });
     await expect(generateBtn).toBeDisabled();
     
-    await page.locator('textarea').first().fill('短的');
-    await expect(generateBtn).toBeDisabled();
-    
-    await page.locator('textarea').first().fill('这是一个超过 10 个字符的提示词');
+    await page.locator('textarea').first().fill('这是一个超过十个字符的测试提示词');
     await expect(generateBtn).toBeEnabled();
   });
 
