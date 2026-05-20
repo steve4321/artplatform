@@ -112,3 +112,63 @@ fix(dashboard): correct API endpoint in fetchDashboard
 
 test(e2e): add reviews page approve workflow tests
 ```
+
+---
+
+## CI/CD
+
+每次 Push 和 Pull Request 到 main 分支都会自动运行：
+
+### GitHub Actions 工作流
+
+`.github/workflows/frontend.yml` 定义了以下检查：
+
+| 检查 | 描述 | 触发条件 |
+|------|------|----------|
+| Unit Tests | Vitest 单元测试 | Push/PR (frontend/**) |
+| E2E Tests | Playwright E2E 测试 | Push/PR (frontend/**) |
+| Test Matrix | 汇总结果 | 所有测试完成后 |
+
+### 本地模拟 CI
+
+```bash
+# 运行完整测试套件
+npm run test:all
+
+# 快速检查（lint + 类型）
+npm run lint
+npx tsc --noEmit
+```
+
+### 跳过 CI
+
+在提交信息中添加 `[skip ci]` 可以跳过 CI：
+
+```
+fix(frontend): quick hotfix [skip ci]
+```
+
+---
+
+## 自动化测试覆盖
+
+### 单元测试 (Vitest) - `frontend/tests/integration/`
+
+| 文件 | 测试数量 | 覆盖范围 |
+|------|----------|----------|
+| authStore.spec.ts | 10 | 登录状态、token 管理 |
+| assetStore.spec.ts | 15 | 资产 CRUD、筛选、版本 |
+| pipelineStore.spec.ts | 18 | 管线创建、状态、Timeline |
+
+### E2E 测试 (Playwright) - `frontend/tests/e2e/`
+
+| 文件 | 测试数量 | 覆盖范围 |
+|------|----------|----------|
+| auth.spec.ts | 4 | 登录、登出、重定向 |
+| dashboard.spec.ts | 3 | 统计卡片显示 |
+| generate.spec.ts | 9 | 管线配置、Prompt 验证、参数 |
+| assets.spec.ts | 9 | 资产列表、筛选、上传 |
+| reviews.spec.ts | 5 | 审批操作 |
+| settings.spec.ts | 5 | 设置页显示 |
+
+**总计**: 43 单元测试 + 35 E2E 测试 = **78 测试**
