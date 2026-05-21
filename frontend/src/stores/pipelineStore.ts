@@ -4,8 +4,6 @@ import type { PipelineRun, PipelineStep, PipelineType, UsageType, OutputSize, Ou
 
 export type { PipelineRun, PipelineStep };
 
-export type PipelineStatus = 'pending' | 'running' | 'completed' | 'failed';
-
 interface Pipeline2DConfig {
   targetSize: OutputSize;
   removeBackground: boolean;

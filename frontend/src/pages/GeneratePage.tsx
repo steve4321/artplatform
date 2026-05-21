@@ -9,19 +9,25 @@ type StageConfig = {
   icon: string;
 };
 
-const PIPELINE_STAGES_3D: StageConfig[] = [
+const PIPELINE_STAGES_3D_SCENE: StageConfig[] = [
   { id: 'text_to_image', name: 'Text → Image', icon: '🖼' },
-  { id: '3d_generate', name: '3D Generate', icon: '📦' },
-  { id: 'cleanup', name: 'Cleanup', icon: '🧹' },
+  { id: 'image_to_3d', name: '3D Generate', icon: '📦' },
+  { id: 'mesh_cleanup', name: 'Cleanup', icon: '🧹' },
   { id: 'uv_material', name: 'UV+Material', icon: '🎨' },
-  { id: 'rig', name: 'Rig', icon: '🦴' },
-  { id: 'animate', name: 'Animate', icon: '🎬' },
+];
+
+const PIPELINE_STAGES_3D_CHARACTER: StageConfig[] = [
+  { id: 'text_to_image', name: 'Text → Image', icon: '🖼' },
+  { id: 'image_to_3d', name: '3D Generate', icon: '📦' },
+  { id: 'mesh_cleanup', name: 'Cleanup', icon: '🧹' },
+  { id: 'uv_material', name: 'UV+Material', icon: '🎨' },
+  { id: 'rigging', name: 'Rig', icon: '🦴' },
 ];
 
 const PIPELINE_STAGES_2D: StageConfig[] = [
   { id: 'text_to_image', name: 'Text → Image', icon: '🖼' },
-  { id: 'postprocess_2d', name: 'Post-Process', icon: '✂️' },
-  { id: 'format_output_2d', name: 'Format Output', icon: '📄' },
+  { id: 'post_process', name: 'Post-Process', icon: '✂️' },
+  { id: 'format_output', name: 'Format Output', icon: '📄' },
 ];
 
 const STYLE_PRESETS: { value: StylePreset; label: string }[] = [
@@ -152,7 +158,12 @@ function PipelineTimeline({
   onRetry: () => void;
   onDiscard: () => void;
 }) {
-  const stages = pipelineType === '2d_art' ? PIPELINE_STAGES_2D : PIPELINE_STAGES_3D;
+  const stages =
+    pipelineType === '2d_art'
+      ? PIPELINE_STAGES_2D
+      : pipelineType === '3d_scene'
+        ? PIPELINE_STAGES_3D_SCENE
+        : PIPELINE_STAGES_3D_CHARACTER;
 
   const overallProgress = useMemo(() => {
     if (steps.length === 0) return 0;
@@ -644,11 +655,14 @@ function ConfigPanel2D({
 function PreviewPanel3D({
   modelUrl,
   currentStep,
+  pipelineType,
 }: {
   modelUrl: string | null;
   currentStep: number;
+  pipelineType: '3d_scene' | '3d_character';
 }) {
-  const stepNames = PIPELINE_STAGES_3D.map((s) => s.name);
+  const stages3D = pipelineType === '3d_scene' ? PIPELINE_STAGES_3D_SCENE : PIPELINE_STAGES_3D_CHARACTER;
+  const stepNames = stages3D.map((s) => s.name);
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden h-full flex flex-col">
@@ -962,7 +976,12 @@ export default function GeneratePage() {
   const modelUrl = getCurrentModelUrl();
   const imageUrls = getCurrentImageUrls();
 
-  const stages = pipelineType === '2d_art' ? PIPELINE_STAGES_2D : PIPELINE_STAGES_3D;
+  const stages =
+    pipelineType === '2d_art'
+      ? PIPELINE_STAGES_2D
+      : pipelineType === '3d_scene'
+        ? PIPELINE_STAGES_3D_SCENE
+        : PIPELINE_STAGES_3D_CHARACTER;
   const currentStep = selectedStageIndex ?? steps.filter((s) => s.status === 'completed').length - 1;
 
   const [elapsed, setElapsed] = useState(0);
@@ -1019,13 +1038,15 @@ export default function GeneratePage() {
 
   const handlePipelineTypeChange = useCallback(
     (newType: PipelineType) => {
-      if (isBusy) return;
       if (newType !== pipelineType) {
-        resetPipeline();
+        const status = currentRun?.status;
+        if (status && !['pending', 'running', 'paused'].includes(status)) {
+          resetPipeline();
+        }
         setPipelineType(newType);
       }
     },
-    [pipelineType, resetPipeline, isBusy],
+    [pipelineType, currentRun?.status, resetPipeline],
   );
 
   const handleGenerate = useCallback(async () => {
@@ -1063,21 +1084,26 @@ export default function GeneratePage() {
   );
 
   useEffect(() => {
-    if (currentRun?.id) {
-      sessionStorage.setItem('pipelineId', currentRun.id);
-    }
+    if (currentRun?.id) sessionStorage.setItem('pipelineId', currentRun.id);
   }, [currentRun?.id]);
 
   useEffect(() => {
+    if (currentRun?.prompt) setPrompt(currentRun.prompt);
+  }, [currentRun?.prompt]);
+
+  useEffect(() => {
+    if (currentRun?.id) return;
     const savedId = sessionStorage.getItem('pipelineId');
-    if (savedId) {
-      fetchPipelineStatus(savedId);
-      const interval = setInterval(() => {
-        pollStatus(savedId);
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  }, [fetchPipelineStatus, pollStatus]);
+    if (savedId) fetchPipelineStatus(savedId);
+  }, [currentRun?.id, fetchPipelineStatus]);
+
+  useEffect(() => {
+    if (!currentRun?.id) return;
+    const savedId = sessionStorage.getItem('pipelineId');
+    if (savedId !== currentRun.id) return;
+    const interval = setInterval(() => pollStatus(currentRun.id), 2000);
+    return () => clearInterval(interval);
+  }, [currentRun?.id, pollStatus]);
 
   useEffect(() => {
     if (currentRun && ['completed', 'failed', 'partial'].includes(currentRun.status)) {
@@ -1087,9 +1113,12 @@ export default function GeneratePage() {
 
   useEffect(() => {
     return () => {
-      resetPipeline();
+      const status = currentRun?.status;
+      if (status && ['completed', 'failed', 'partial'].includes(status)) {
+        sessionStorage.removeItem('pipelineId');
+      }
     };
-  }, [resetPipeline]);
+  }, [currentRun?.status]);
 
   return (
     <div className="h-full flex flex-col">
@@ -1196,9 +1225,18 @@ export default function GeneratePage() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-gray-800">
-                  <p className="text-gray-400 text-sm">
-                    Selected: <span className="text-gray-200">Image {selectedConceptIndex + 1}</span>
-                  </p>
+                  <div className="flex gap-2">
+                    <p className="text-gray-400 text-sm">
+                      Selected: <span className="text-gray-200">Image {selectedConceptIndex + 1}</span>
+                    </p>
+                    <button
+                      onClick={() => currentRun?.id && deletePipeline(currentRun.id)}
+                      disabled={isBusy}
+                      className="px-3 py-1.5 text-sm bg-red-900/60 hover:bg-red-800/60 disabled:opacity-50 text-red-300 font-medium rounded-lg transition-colors flex items-center gap-1.5 border border-red-800/50"
+                    >
+                      Discard & retry
+                    </button>
+                  </div>
                   <button
                     onClick={handleResume}
                     disabled={isBusy}
@@ -1221,7 +1259,7 @@ export default function GeneratePage() {
                 </div>
               </div>
             ) : pipelineType !== '2d_art' ? (
-              <PreviewPanel3D modelUrl={modelUrl} currentStep={currentStep} />
+              <PreviewPanel3D modelUrl={modelUrl} currentStep={currentStep} pipelineType={pipelineType as '3d_scene' | '3d_character'} />
             ) : (
               <PreviewPanel2D imageUrls={imageUrls} currentStep={currentStep} />
             )}
