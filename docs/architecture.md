@@ -164,7 +164,7 @@ Stage 5: 骨骼绑定 (Rigify)    → 带骨骼的蒙皮网格 (GLB)
 - `backend/app/pipeline/default_pipeline.py` is dead code and will be removed.
 - API routes and frontend types must reference this registry, not hard-code stage lists.
 - Stage IDs: `text_to_image`, `image_to_3d`, `mesh_cleanup`, `uv_material`, `rigging`, `animation` (3D); `text_to_image`, `post_process`, `format_output` (2D).
-- Provider settings (mode, cloud_provider, api_key) are stored per-stage in `provider_settings` DB table, applied when creating pipelines.
+- Provider settings: `pipeline_defaults` stores default mode per pipeline type (mock/local/cloud/custom); `provider_settings` stores per-(pipeline_type, stage) overrides with cloud provider and api_key. Skip mode (`"skip"`) causes stage to be omitted from pipeline execution.
 
 ### UX: Single-Page Progressive Workflow
 
@@ -387,38 +387,59 @@ Rules:
 
 ### Provider Settings
 
-每个管线阶段可独立配置运行模式（mock / local / cloud），存储在 `provider_settings` 表中。
+每个管线类型（3D 场景 / 3D 角色 / 2D）可独立配置默认运行模式，并支持按阶段覆盖。存储在 `pipeline_defaults` 和 `provider_settings` 两张表中。
 
 ```sql
+-- 管线级别默认模式
+CREATE TABLE pipeline_defaults (
+    pipeline_type TEXT PRIMARY KEY,       -- "3d_scene", "3d_character", "2d_art"
+    default_mode TEXT NOT NULL,           -- "mock", "local", "cloud", "custom"
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 按 (管线类型, 阶段) 的独立设置
 CREATE TABLE provider_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    stage TEXT NOT NULL UNIQUE,           -- e.g. "text_to_image", "image_to_3d"
-    mode TEXT NOT NULL DEFAULT 'mock' CHECK ('mock','local','cloud'),
+    pipeline_type TEXT NOT NULL,          -- 所属管线类型
+    stage TEXT NOT NULL,                  -- e.g. "text_to_image"
+    mode TEXT NOT NULL DEFAULT 'mock',    -- "mock", "local", "cloud", "skip"
     processor_name TEXT,                  -- 自动根据 mode 填充
     cloud_provider TEXT,                  -- e.g. "stability_ai", "tripo_cloud"
     api_key TEXT,                         -- 明文存储（内部工具）
     base_url TEXT,                        -- 可选，自定义 API 端点
-    extra_config JSONB DEFAULT '{}',      -- 额外参数
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    extra_config JSONB DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (pipeline_type, stage)         -- 每种管线类型有独立的阶段配置
 );
 ```
 
-**优先级**：API 显式配置 > DB provider_settings > pipeline_configs 默认值。
+**行为逻辑**：
+- `default_mode == "custom"`：从 `provider_settings` 逐阶段读取 mode
+- `default_mode != "custom"`：所有阶段使用 `default_mode` 作为 mode；cloud_provider/api_key 仍从 `provider_settings` 读取
+- `mode == "skip"`：创建管线时跳过该阶段，不生成 PipelineStep
 
-**阶段定义**（单一来源 `pipeline_configs.py`）：
+**阶段定义**（按管线类型分组，单一来源 `pipeline_configs.py`）：
 
-| 阶段 | 可用模式 | Cloud Providers |
-|------|---------|-----------------|
-| `text_to_image` | mock, local, cloud | stability_ai, fal_ai, replicate, comfyui |
-| `image_to_3d` | mock, local, cloud | tripo_cloud, meshy_ai, csm_ai |
-| `mesh_cleanup` | mock, local | — |
-| `uv_material` | mock, local | — |
-| `rigging` | mock, local | — |
-| `post_process` | mock, local | — |
-| `format_output` | mock, local | — |
+| 管线类型 | 阶段 | 可用模式 |
+|---------|------|---------|
+| **3D 场景** | text_to_image | mock, local, cloud |
+| | image_to_3d | mock, local, cloud |
+| | mesh_cleanup | **skip**, mock, local |
+| | uv_material | **skip**, mock, local |
+| **3D 角色** | text_to_image | mock, local, cloud |
+| | image_to_3d | mock, local, cloud |
+| | mesh_cleanup | **skip**, mock, local |
+| | uv_material | **skip**, mock, local |
+| | rigging | **skip**, mock, local |
+| **2D** | text_to_image | mock, local, cloud |
+| | post_process | mock, local |
+| | format_output | mock, local |
 
-**API**：`GET/PUT /api/v1/settings/providers`（全局设置，所有认证用户可读写）。
+**API**：
+- `GET /api/v1/settings/providers` — 返回按管线类型分组的 stage_definitions 和 defaults
+- `PUT /api/v1/settings/providers/{pipeline_type}/{stage}` — 更新某管线类型的阶段设置
+- `GET /api/v1/settings/providers/defaults` — 读取所有管线类型的默认模式
+- `PUT /api/v1/settings/providers/defaults` — 更新某管线类型的默认模式
 
 ### Review Flow (v1)
 

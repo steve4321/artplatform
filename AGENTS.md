@@ -32,5 +32,5 @@
 - **概念图统一暂停**：所有 3D 管线（场景/角色）在概念图阶段统一暂停审核
 - **管线阶段单一来源**：所有阶段定义统一在 `pipeline_configs.py`，不散落在多处
 - **状态机验证**：状态转换必须通过 `is_valid_transition()` 验证
-- **Provider 设置全局可配**：每个管线阶段可在 Settings 页面独立配置 mock/local/cloud 模式，存储在 `provider_settings` 表，创建管线时自动应用（优先级：API 显式配置 > DB 设置 > pipeline_configs 默认）
+- **Provider 设置按管线类型独立**：3D 场景/3D 角色/2D 各有独立的默认模式和阶段覆盖，支持 `skip` 模式跳过不需要的阶段。`pipeline_defaults` 表存储每种管线类型的默认模式，`provider_settings` 表按 `(pipeline_type, stage)` 存储覆盖配置。创建管线时自动应用（优先级：API 显式配置 > 默认模式/DB 设置 > pipeline_configs 默认）
 - **云 Provider 运行时注册**：cloud processor 从 step config 读取 `cloud_provider`/`api_key`，无需预配环境变量即可使用第三方 API

@@ -17,7 +17,7 @@
 - **Unity 就绪**：导出 FBX + 纹理 / PNG 贴图，拖入 Unity 即可使用
 - **CLI 工具**：命令行操作，支持脚本自动化和 CI/CD 集成
  - **MCP 服务**：AI 助手可直接调用平台能力（Claude / Cursor / Copilot）
- - **Provider 设置**：每个管线阶段独立配置 mock/local/cloud 模式，支持第三方 API 密钥管理
+ - **Provider 设置**：3D 场景/3D 角色/2D 各有独立的默认模式和阶段覆盖配置，支持第三方 API 密钥管理，可跳过不需要的阶段
 
 ## 快速开始
 

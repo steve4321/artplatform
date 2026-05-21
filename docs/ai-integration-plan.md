@@ -60,7 +60,7 @@
 | `cloud` | Settings 页面配置 cloud_provider + api_key | 无 | 按量付费 | 初期验证 |
 | `local` | Settings 页面切换 | 需要 | 电费 | 生产降本 |
 
-> **设计决策**：Provider 模式通过 Settings 页面（`provider_settings` DB 表）按阶段独立配置，而非全局环境变量。创建管线时自动读取 DB 设置作为默认值（优先级：API 显式配置 > DB 设置 > pipeline_configs 默认）。
+> **设计决策**：Provider 模式支持按管线类型（3D 场景/3D 角色/2D）设置默认模式，并允许按阶段覆盖。`pipeline_defaults` 表存储每种管线类型的默认模式（mock/local/cloud/custom），`provider_settings` 表按 `(pipeline_type, stage)` 存储独立配置。stage 支持 `skip` 模式（mesh_cleanup、uv_material、rigging），创建管线时自动跳过。创建管线时读取默认模式并合并设置（优先级：API 显式配置 > 默认模式/DB 设置 > pipeline_configs 默认）。
 
 **Provider 切换方式**：
 
@@ -69,7 +69,7 @@
 # 每个阶段独立选择 mock / local / cloud，填入 API Key
 
 # 方式 2: API 调用
-curl -X PUT http://localhost:8000/api/v1/settings/providers/text_to_image \
+curl -X PUT http://localhost:8000/api/v1/settings/providers/3d_scene/text_to_image \
   -H "Authorization: Bearer <token>" \
   -d '{"mode": "cloud", "cloud_provider": "stability_ai", "api_key": "sk-xxx"}'
 
