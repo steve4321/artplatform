@@ -12,10 +12,11 @@ from app.core.database import Base
 class ProviderSetting(Base):
     __tablename__ = "provider_settings"
     __table_args__ = (
-        UniqueConstraint("stage", name="uq_provider_settings_stage"),
+        UniqueConstraint("pipeline_type", "stage", name="uq_provider_settings_pipeline_type_stage"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    pipeline_type: Mapped[str] = mapped_column(Text, nullable=False)
     stage: Mapped[str] = mapped_column(Text, nullable=False)
     mode: Mapped[str] = mapped_column(Text, nullable=False)
     processor_name: Mapped[str] = mapped_column(Text, nullable=False)
