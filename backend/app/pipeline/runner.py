@@ -176,7 +176,7 @@ def run_pipeline(self, pipeline_run_id: str) -> None:
                                     },
                                 })
 
-                        is_3d = pipeline_run.config.get("pipeline_type", "3d_character") != "2d_art"
+                        is_3d = pipeline_run.pipeline_type != "2d_art"
                         if is_3d and concept_image_artifacts:
                             pipeline_run.completed_stages = completed
                             pipeline_run.status = "paused"

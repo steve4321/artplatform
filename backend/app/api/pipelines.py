@@ -74,6 +74,7 @@ async def create_pipeline(
     pipeline = PipelineRun(
         asset_id=asset.id,
         prompt=payload.prompt,
+        pipeline_type=payload.pipeline_type,
         reference_image_key=payload.reference_image_key,
         status="pending",
         config=config_dict,

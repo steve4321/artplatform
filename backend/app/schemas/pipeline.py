@@ -79,6 +79,7 @@ class PipelineResponse(BaseModel):
     id: UUID
     asset_id: UUID
     prompt: str
+    pipeline_type: str = "3d_scene"
     reference_image_key: str | None = None
     status: PipelineStatus
     config: dict[str, Any] = Field(default_factory=dict)
