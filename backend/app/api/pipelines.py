@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from typing import Annotated
 from uuid import UUID
 
@@ -16,6 +15,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
 from app.models import Asset, Artifact, PipelineRun, PipelineStep, User
+from app.pipeline.pipeline_configs import get_pipeline_stages
 from app.schemas.asset import AssetType
 from app.schemas.pipeline import (
     PipelineCreate,
@@ -26,102 +26,9 @@ from app.schemas.pipeline import (
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
 
-_HAS_BPY = False
-try:
-    import bpy  # noqa: F401
-    _HAS_BPY = True
-except ImportError:
-    pass
-
-_HAS_BLENDER = bool(shutil.which("blender"))
-
 _LOCAL_DEV = os.environ.get("LOCAL_DEV", "").lower() in ("true", "1", "yes")
 _PROCESSOR_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
 _EAGER_EXECUTION = _LOCAL_DEV or _PROCESSOR_MODE in ("mock", "local")
-
-if _PROCESSOR_MODE == "mock":
-    # Legacy 3D pipeline (full 6 stages with rig + animate)
-    PIPELINE_STAGES = [
-        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
-        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
-        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
-        {"stage": "rig", "processor_name": "rigify_mock"},
-        {"stage": "animate", "processor_name": "hy_motion_mock"},
-    ]
-    # 3D scene pipeline (4 stages, no rig)
-    PIPELINE_STAGES_SCENE = [
-        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
-        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
-        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
-    ]
-    # 3D character pipeline (5 stages, with rig)
-    PIPELINE_STAGES_CHARACTER = [
-        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
-        {"stage": "image_to_3d", "processor_name": "triposr_mock"},
-        {"stage": "cleanup", "processor_name": "instant_meshes_mock"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy_mock"},
-        {"stage": "rig", "processor_name": "rigify_mock"},
-    ]
-    PIPELINE_STAGES_2D = [
-        {"stage": "text_to_image", "processor_name": "sdxl_mock"},
-        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan_mock"},
-        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch_mock"},
-    ]
-elif _PROCESSOR_MODE == "cloud":
-    PIPELINE_STAGES = [
-        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
-        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
-        {"stage": "animate", "processor_name": "mixamo_preset" if _HAS_BLENDER else "hy_motion_mock"},
-    ]
-    PIPELINE_STAGES_SCENE = [
-        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
-        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-    ]
-    PIPELINE_STAGES_CHARACTER = [
-        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
-        {"stage": "image_to_3d", "processor_name": "image_to_3d_cloud"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
-    ]
-    PIPELINE_STAGES_2D = [
-        {"stage": "text_to_image", "processor_name": "sdxl_cloud"},
-        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan"},
-        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch"},
-    ]
-else:
-    PIPELINE_STAGES = [
-        {"stage": "text_to_image", "processor_name": "sdxl"},
-        {"stage": "image_to_3d", "processor_name": "triposr"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
-    ]
-    PIPELINE_STAGES_SCENE = [
-        {"stage": "text_to_image", "processor_name": "sdxl"},
-        {"stage": "image_to_3d", "processor_name": "triposr"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-    ]
-    PIPELINE_STAGES_CHARACTER = [
-        {"stage": "text_to_image", "processor_name": "sdxl"},
-        {"stage": "image_to_3d", "processor_name": "triposr"},
-        {"stage": "cleanup", "processor_name": "instant_meshes"},
-        {"stage": "uv_material", "processor_name": "xatlas_bpy"},
-        {"stage": "rig", "processor_name": "rigify" if _HAS_BLENDER else "rigify_mock"},
-    ]
-    PIPELINE_STAGES_2D = [
-        {"stage": "text_to_image", "processor_name": "sdxl"},
-        {"stage": "postprocess_2d", "processor_name": "rembg_esrgan"},
-        {"stage": "format_output_2d", "processor_name": "png_sprite_9patch"},
-    ]
 
 
 @router.post("", response_model=PipelineResponse, status_code=status.HTTP_201_CREATED)
@@ -147,7 +54,7 @@ async def create_pipeline(
                 detail="Referenced asset not found",
             )
     else:
-        asset_type = AssetType.model_3d.value if payload.pipeline_type in ("3d_art", "3d_scene", "3d_character") else AssetType.texture_2d.value
+        asset_type = AssetType.model_3d.value if payload.pipeline_type in ("3d_scene", "3d_character") else AssetType.texture_2d.value
         asset = Asset(
             team_id=current_user.team_id,
             created_by=current_user.id,
@@ -162,14 +69,7 @@ async def create_pipeline(
         db.add(asset)
         await db.flush()
 
-    if payload.pipeline_type == "2d_art":
-        stages = PIPELINE_STAGES_2D
-    elif payload.pipeline_type == "3d_scene":
-        stages = PIPELINE_STAGES_SCENE
-    elif payload.pipeline_type == "3d_character":
-        stages = PIPELINE_STAGES_CHARACTER
-    else:  # legacy 3d_art maps to character pipeline
-        stages = PIPELINE_STAGES_CHARACTER
+    stages = get_pipeline_stages(payload.pipeline_type)
     config_dict = payload.config.model_dump()
     pipeline = PipelineRun(
         asset_id=asset.id,
@@ -183,26 +83,50 @@ async def create_pipeline(
     db.add(pipeline)
     await db.flush()
 
+    from app.models.provider_setting import ProviderSetting
+    ps_result = await db.execute(select(ProviderSetting))
+    provider_settings = {ps.stage: ps for ps in ps_result.scalars().all()}
+
     for idx, stage_def in enumerate(stages, start=1):
         stage_config = config_dict.get("stages", {}).get(stage_def["stage"], {})
+
+        db_setting = provider_settings.get(stage_def["stage"])
+        if stage_config.get("processor_name"):
+            processor_name = stage_config["processor_name"]
+        elif db_setting:
+            processor_name = db_setting.processor_name
+        else:
+            processor_name = stage_def["processor_name"]
+
+        step_config = {}
+        if db_setting and db_setting.mode == "cloud":
+            step_config["cloud_provider"] = db_setting.cloud_provider
+            if db_setting.api_key:
+                step_config["api_key"] = db_setting.api_key
+            if db_setting.base_url:
+                step_config["base_url"] = db_setting.base_url
+            if db_setting.extra_config:
+                step_config.update(db_setting.extra_config)
+        step_config.update(stage_config.get("params", {}))
+
         step = PipelineStep(
             pipeline_run_id=pipeline.id,
             stage_order=idx,
             stage=stage_def["stage"],
-            processor_name=stage_config.get("processor_name", stage_def["processor_name"]),
+            processor_name=processor_name,
             status="pending",
-            config=stage_config.get("params", {}),
+            config=step_config,
         )
         db.add(step)
 
     await db.commit()
 
-    if _EAGER_EXECUTION:
+    if _LOCAL_DEV:
         from app.workers import ensure_processors_registered
         from app.pipeline.runner import run_pipeline
 
         ensure_processors_registered()
-        run_pipeline.delay(str(pipeline.id))
+        run_pipeline(str(pipeline.id))
 
     stmt = (
         select(PipelineRun)
@@ -363,9 +287,9 @@ async def retry_stage(
             detail=f"Stage order {stage_order} not found in this pipeline",
         )
 
-    if _EAGER_EXECUTION:
+    if _LOCAL_DEV:
         from app.pipeline.runner import run_pipeline
-        run_pipeline.delay(str(pipeline_id))
+        run_pipeline(str(pipeline_id))
 
     stmt = (
         select(PipelineRun)

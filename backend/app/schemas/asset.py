@@ -16,6 +16,7 @@ class AssetType(str, enum.Enum):
     sprite = "sprite"
     material = "material"
     animation_clip = "animation_clip"
+    animation = "animation_clip"  # alias for animation_clip
     prefab = "prefab"
     audio = "audio"
     vfx = "vfx"
