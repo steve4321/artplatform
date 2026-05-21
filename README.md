@@ -8,15 +8,16 @@
 
  - **提示词驱动**：输入文字描述，自动走完 AI 管线（3D 场景 4 阶段/角色 5 阶段，2D 为 3 阶段）
  - **3D 管线**：文生图 → [人工审核概念图] → 3D 建模 → 网格清理 → UV+材质 → 骨骼绑定 →（动画跳过）
- - **3D 场景流程**：文生图 → 3D 建模 → 网格清理 → UV+材质（4 阶段，无需骨骼/动画）
- - **3D 角色流程**：文生图 → 3D 建模 → 网格清理 → UV+材质 → 骨骼绑定（5 阶段）
+ - **3D 场景流程**：文生图 → [人工审核概念图] → 3D 建模 → 网格清理 → UV+材质（4 阶段，无需骨骼/动画）
+ - **3D 角色流程**：文生图 → [人工审核概念图] → 3D 建模 → 网格清理 → UV+材质 → 骨骼绑定（5 阶段）
  - **2D 管线**：文生图 → 去背景+后处理 → PNG / Sprite Sheet / 9-Patch 产出
  - **3D Web 预览**：浏览器内实时预览（旋转/缩放/线框/骨骼）
 - **2D Web 预览**：透明棋盘格背景、去背景对比、Sprite 帧播放
 - **团队协作**：RBAC 权限管理、Review 审批流
 - **Unity 就绪**：导出 FBX + 纹理 / PNG 贴图，拖入 Unity 即可使用
 - **CLI 工具**：命令行操作，支持脚本自动化和 CI/CD 集成
-- **MCP 服务**：AI 助手可直接调用平台能力（Claude / Cursor / Copilot）
+ - **MCP 服务**：AI 助手可直接调用平台能力（Claude / Cursor / Copilot）
+ - **Provider 设置**：每个管线阶段独立配置 mock/local/cloud 模式，支持第三方 API 密钥管理
 
 ## 快速开始
 
@@ -136,7 +137,7 @@ pip install -e ".[mcp]"
 }
 ```
 
-MCP 提供 9 个工具：`generate_3d_asset`、`generate_2d_asset`、`list_assets`、`get_asset`、`update_asset`、`upload_asset_version`、`export_asset`、`submit_review`、`run_pipeline`、`get_pipeline_status`。
+MCP 提供 9 个工具：`generate_3d_asset`、`list_assets`、`get_asset`、`update_asset`、`upload_asset_version`、`export_asset`、`submit_review`、`run_pipeline`、`get_pipeline_status`。
 
 ## 部署方案
 
@@ -186,7 +187,7 @@ docker-compose up -d
 ```
 GPU 0 (24GB): SDXL (~8GB) + TripoSR (~6GB) → 轮流加载，可同时驻留
 GPU 1 (40GB): HY-Motion (~24GB) → 常驻，专用
-CPU Workers:  Instant Meshes + xatlas + Blender(bpy) + Rigify
+CPU Workers:  Instant Meshes + xatlas + Blender(subprocess) + Rigify
 ```
 
 ### 方案四：Kubernetes 集群（大规模）
@@ -253,8 +254,8 @@ Web 2D 预览 → Review → 发布 → Unity 导入
 | 2. 图生 3D | **TripoSR** | GPU | 6 GB | 8 GB+ | 1.68 GB | <0.5s (A100) |
 | 2. 图生 3D | *Stable Fast 3D (备选)* | GPU | 6 GB | 8 GB+ | ~2 GB | <0.5s |
 | 3. 网格清理 | **Instant Meshes** | CPU | — | 4 GB+ | 二进制 (50MB) | <1s (<100K 面) |
-| 4. UV + 材质 | **xatlas** + **Blender (bpy)** | CPU | — | 8 GB+ | bpy ~300MB | 10-30s |
-| 5. 骨骼绑定 | **Rigify** (via bpy) | CPU | — | 8 GB+ | 内置于 Blender | 5-15s |
+| 4. UV + 材质 | **xatlas** + **Blender (subprocess)** | CPU | — | 8 GB+ | Blender ~300MB | 10-30s |
+| 5. 骨骼绑定 | **Rigify** (via Blender subprocess) | CPU | — | 8 GB+ | 内置于 Blender | 5-15s |
 | 6. 动画生成 | **HY-Motion 1.0 Lite** | GPU | **24 GB** | 16 GB+ | ~4 GB (0.46B params) | 10-30s |
 | 6. 动画生成 | *Mixamo 预设 (备选)* | — | — | — | Web API | 即时 |
 | 2D-2. 去背景 | **rembg** | CPU/GPU | 可选 | 4 GB+ | ~180 MB | <1s |
@@ -298,7 +299,7 @@ Web 2D 预览 → Review → 发布 → Unity 导入
 | 对象存储 | MinIO / S3 / Local (dev) | 二进制文件存储 |
 | 任务队列 | Celery + Redis / Eager (dev) | GPU/CPU Worker 调度 |
 | AI 推理 | diffusers + 自定义 Worker | Python 原生，Docker GPU 直通 |
-| 3D 处理 | Blender (bpy) + xatlas + Instant Meshes | 进程内调用，无冷启动 |
+| 3D 处理 | Blender (subprocess) + xatlas + Instant Meshes | 进程隔离，线程安全 |
 | 2D 处理 | rembg + Real-ESRGAN | 去背景 + 超分辨率 |
 | 动画 | HY-Motion 1.0 Lite | 本地部署，Apache 2.0 |
 
@@ -308,22 +309,22 @@ Web 2D 预览 → Review → 发布 → Unity 导入
 artplatform/
 ├── backend/
 │   ├── app/
-│   │   ├── api/            # FastAPI 路由 (auth, assets, pipelines, reviews, teams)
+│   │   ├── api/            # FastAPI 路由 (auth, assets, pipelines, reviews, teams, settings)
 │   │   ├── core/           # 配置、数据库、存储、认证
-│   │   ├── models/         # SQLAlchemy ORM 模型
+│   │   ├── models/         # SQLAlchemy ORM 模型 (含 provider_setting)
 │   │   ├── schemas/        # Pydantic 请求/响应模式
-│   │   ├── pipeline/       # 管线编排、处理器注册、Celery Runner
-│   │   ├── workers/        # 阶段处理器 (mock / 真实 AI 实现)
+│   │   ├── pipeline/       # 管线编排、处理器注册、Celery Runner、STAGE_DEFINITIONS
+│   │   ├── workers/        # 阶段处理器 (mock / local / cloud)
 │   │   ├── services/       # 业务逻辑 (导出服务等)
 │   │   ├── cli/            # typer CLI 命令
 │   │   └── mcp/            # MCP Server
-│   ├── tests/              # 33 个 pytest 测试
+│   ├── tests/              # pytest 测试
 │   ├── alembic/            # 数据库迁移
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
 │   │   ├── api/            # axios 客户端 (snake_case→camelCase 自动转换)
-│   │   ├── stores/         # zustand 状态管理 (auth, asset, pipeline, review, dashboard)
+│   │   ├── stores/         # zustand 状态管理 (auth, asset, pipeline, review, dashboard, providerSettings)
 │   │   ├── pages/          # 页面组件 (Login, Dashboard, Generate, Assets, Reviews, Settings)
 │   │   ├── components/     # 3D 预览器、布局、资产卡片
 │   │   └── types/          # TypeScript 类型定义
@@ -339,7 +340,7 @@ cd backend
 LOCAL_DEV=true python -m pytest tests/ -v
 ```
 
-33 个测试覆盖：认证 (6)、资产 CRUD (11)、管线 (6)、审批 (5)、团队 (5)。
+测试覆盖：认证 (6)、资产 CRUD (11)、管线 (6)、审批 (5)、团队 (5)、Provider 设置 (10+)。
 
 ## 开发状态
 
@@ -350,14 +351,15 @@ LOCAL_DEV=true python -m pytest tests/ -v
 - [x] UV+材质烘焙（Python 栅格化投影）
 - [x] 2D 美术管线（3 阶段：文生图 → 后处理 → 格式产出）
 - [x] 前端全页面对接真实 API（登录、Dashboard、Generate、Assets、Reviews、Settings）
+- [x] Provider 设置页面（每阶段独立配置 mock/local/cloud + API 密钥管理）
 - [x] CLI 工具（9 个命令）
 - [x] MCP Server（10 个工具 + 1 个 Prompt 模板）
-- [x] 33 个自动化测试
+- [x] 自动化测试（含 Provider 设置测试）
 - [ ] 接入真实 AI 模型（需 GPU 环境）
 - [ ] Docker Compose 生产部署
 - [ ] 3D 预览器对接真实 GLB 文件
 - [ ] 2D 预览器（棋盘格背景、去背景对比、Sprite 帧播放）
-- [ ] WebSocket 实时推送管线进度
+- [ ] WebSocket 实时推送管线进度 [v2]
 
 ## 许可证
 

@@ -109,6 +109,8 @@ export const useXxxStore = create<XxxState>((set, get) => ({
 
 **管线类型**：`'3d_scene'` | `'3d_character'` | `'2d_art'`
 
+> 注意：`3d_art` 已废弃，统一使用 `3d_character`。
+
 #### `authStore.ts` — 认证
 
 - `login(email, password)` — 登录
@@ -195,10 +197,10 @@ interface PipelineRun {
   assetId: string;
   prompt: string;
   status: PipelineStatus;
-  pipelineType: PipelineType;
+  pipelineType: PipelineType;   // 独立字段，不在 config 中
   totalStages: number;
   completedStages: number;
-  config: Record<string, unknown>;  // 包含 pipeline_type、selected_image_index 等
+  config: Record<string, unknown>;  // 管线配置参数（不含 pipeline_type）
   steps: PipelineStep[];
 }
 ```
@@ -250,7 +252,7 @@ interface PipelineStep {
 
 ### Pipeline 暂停状态
 
-只有 `pipelineType !== '2d_art'` 时才会暂停（3D 场景和角色流程）。
+**所有 3D 管线**（场景和角色）都会在概念图阶段暂停。`2d_art` 管线不暂停。
 
 暂停发生在 text_to_image 完成后，建模之前。
 
