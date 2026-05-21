@@ -23,14 +23,14 @@
 │  └──────────┘  └──────────────┘  └──────────┘  └─────────────┘ │
 ├──────────────────────────────────────────────────────────────────┤
 │                    API Server (Python FastAPI)                    │
-│                 WebSocket 流式推送 + REST API                     │
+│                 HTTP 轮询 + REST API（WebSocket 为 v2 优化）      │
 ├──────────┬──────────┬──────────┬──────────┬──────────────────────┤
-│  管线编排 │  资产服务 │  团队权限 │  Review  │  导出服务           │
-│  (Celery)│  (CRUD)  │  (RBAC) │  (审批流)│  (Unity/FBX/GLB)    │
+│  管线编排 │  资产服务 │  团队权限 │  Review  │  导出服务  │  设置服务  │
+│  (Celery)│  (CRUD)  │  (RBAC) │  (审批流)│  (Unity/FBX/GLB)│(Provider)│
 ├──────────┴──────────┴──────────┴──────────┴──────────────────────┤
 │               Worker Pool (Docker Compose)                       │
 │  ┌─────────────┐ ┌──────────────┐ ┌───────────────────────────┐ │
-│  │ GPU Workers │ │ CPU Workers  │ │ Blender Worker (bpy)      │ │
+│  │ GPU Workers │ │ CPU Workers  │ │ Blender Worker (subprocess) │ │
 │  │ SDXL+TripoSR│ │ InstantMeshes│ │ Rigify/UniRig + xatlas   │ │
 │  │ HY-Motion   │ │ 格式转换     │ │ 材质烘焙                  │ │
 │  └─────────────┘ └──────────────┘ └───────────────────────────┘ │
@@ -49,6 +49,7 @@
 
 ```
 Stage 1: 文生图 (SDXL)         → 2-4 张概念图 (PNG)
+         ↓ [人工审核 — 概念图暂停点，所有 3D 管线统一暂停]
 Stage 2: 图生 3D (TripoSR)    → 粗糙 3D 网格 (GLB)
 Stage 3: 网格清理 (Instant Meshes) → 干净的拓扑网格 (GLB)
 Stage 4: UV + 材质烘焙        → 带 PBR 纹理的网格 (GLB + PNG)
@@ -153,6 +154,18 @@ Stage 5: 骨骼绑定 (Rigify)    → 带骨骼的蒙皮网格 (GLB)
 - `pipeline_runs` 表通过 `pipeline_type` 字段区分 `3d_scene` / `3d_character` / `2d_art`
 - 独立的阶段处理器，互不影响
 
+### Pipeline Stage Registry
+
+**Design Decision**: All pipeline stage definitions live in a single Python module `backend/app/pipeline/pipeline_configs.py`.
+
+- One `PIPELINE_REGISTRY` dict maps `pipeline_type` → ordered list of stages with their processors.
+- `STAGE_DEFINITIONS` constant defines all 7 stages with available modes (mock/local/cloud) and mode→processor mapping.
+- `get_processor_name_for_mode()` returns the correct processor name for a given stage + mode combination.
+- `backend/app/pipeline/default_pipeline.py` is dead code and will be removed.
+- API routes and frontend types must reference this registry, not hard-code stage lists.
+- Stage IDs: `text_to_image`, `image_to_3d`, `mesh_cleanup`, `uv_material`, `rigging`, `animation` (3D); `text_to_image`, `post_process`, `format_output` (2D).
+- Provider settings (mode, cloud_provider, api_key) are stored per-stage in `provider_settings` DB table, applied when creating pipelines.
+
 ### UX: Single-Page Progressive Workflow
 
 #### 3D 模式
@@ -210,7 +223,7 @@ Stage 5: 骨骼绑定 (Rigify)    → 带骨骼的蒙皮网格 (GLB)
 **Interaction Rules:**
 1. Pipeline runs fully automatically after user clicks "Generate"
 2. **Pause at Stage 1**: show 2-4 candidate concept images for user to pick (concept quality determines downstream quality)
-3. Stages 2-6 auto-advance, intermediate results stream via WebSocket
+3. Stages 2+ auto-advance, intermediate results available via polling (WebSocket [v2])
 4. Any stage failure → show partial results, mark failed node, offer "retry from here"
 5. Each completed stage has an "Edit" button for parameter adjustment or manual file upload
 
@@ -274,6 +287,8 @@ CREATE TABLE asset_versions (
     UNIQUE(asset_id, version)
 );
 
+> **Note**: `storage_key_thumbnail` is populated in [v2]. v1 does not generate thumbnails.
+
 -- Asset Dependencies
 CREATE TABLE asset_dependencies (
     dependent_asset_id UUID NOT NULL REFERENCES assets(id),
@@ -289,12 +304,12 @@ CREATE TABLE pipeline_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id UUID NOT NULL REFERENCES assets(id),
     pipeline_type TEXT NOT NULL DEFAULT '3d_scene' CHECK (
-        '3d_scene','3d_character','3d_art','2d_art'
+        '3d_scene','3d_character','2d_art'
     ),
     prompt TEXT NOT NULL,
     reference_image_key TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (
-        'running','completed','partial','failed'
+        'pending','paused','running','completed','partial','failed'
     ),
     config JSONB NOT NULL,
     total_stages INT,
@@ -302,6 +317,8 @@ CREATE TABLE pipeline_runs (
     created_at TIMESTAMPTZ DEFAULT now(),
     completed_at TIMESTAMPTZ
 );
+
+> **Note**: `pipeline_type` is a first-class column (not in `config` JSON) because it's a core query dimension for filtering pipeline runs.
 
 -- Pipeline Steps
 CREATE TABLE pipeline_steps (
@@ -322,7 +339,7 @@ CREATE TABLE pipeline_steps (
     completed_at TIMESTAMPTZ
 );
 
--- Artifacts (intermediate pipeline outputs)
+-- Artifacts (intermediate pipeline outputs) [v2: full artifact tracking]
 CREATE TABLE artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     team_id UUID NOT NULL REFERENCES teams(id),
@@ -332,6 +349,8 @@ CREATE TABLE artifacts (
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+> **Note**: The `artifacts` table is reserved for v2. In v1, intermediate outputs are tracked via `pipeline_steps.output_artifact_ids` JSON array.
 
 -- Reviews
 CREATE TABLE reviews (
@@ -363,7 +382,50 @@ Rules:
 - viewer: read-only
 - published → deprecated (admin only, soft delete, no hard delete)
 - publish guard: all dependencies must also be published
+- State transitions are validated via `is_valid_transition()` in the Asset model. Invalid transitions raise `ValueError`.
 ```
+
+### Provider Settings
+
+每个管线阶段可独立配置运行模式（mock / local / cloud），存储在 `provider_settings` 表中。
+
+```sql
+CREATE TABLE provider_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stage TEXT NOT NULL UNIQUE,           -- e.g. "text_to_image", "image_to_3d"
+    mode TEXT NOT NULL DEFAULT 'mock' CHECK ('mock','local','cloud'),
+    processor_name TEXT,                  -- 自动根据 mode 填充
+    cloud_provider TEXT,                  -- e.g. "stability_ai", "tripo_cloud"
+    api_key TEXT,                         -- 明文存储（内部工具）
+    base_url TEXT,                        -- 可选，自定义 API 端点
+    extra_config JSONB DEFAULT '{}',      -- 额外参数
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**优先级**：API 显式配置 > DB provider_settings > pipeline_configs 默认值。
+
+**阶段定义**（单一来源 `pipeline_configs.py`）：
+
+| 阶段 | 可用模式 | Cloud Providers |
+|------|---------|-----------------|
+| `text_to_image` | mock, local, cloud | stability_ai, fal_ai, replicate, comfyui |
+| `image_to_3d` | mock, local, cloud | tripo_cloud, meshy_ai, csm_ai |
+| `mesh_cleanup` | mock, local | — |
+| `uv_material` | mock, local | — |
+| `rigging` | mock, local | — |
+| `post_process` | mock, local | — |
+| `format_output` | mock, local | — |
+
+**API**：`GET/PUT /api/v1/settings/providers`（全局设置，所有认证用户可读写）。
+
+### Review Flow (v1)
+
+- Asset owner submits for review (draft → review transition)
+- Any team member with `reviewer` or `admin` role can approve/reject
+- Single reviewer, single decision — no multi-reviewer arbitration in v1
+- Review history is preserved in the `reviews` table
 
 ### Versioning
 
@@ -386,7 +448,7 @@ Rules:
 | 网格清理 | Instant Meshes | BSD 3-Clause | Industry standard retopology |
 | 网格修复 | PyMeshLab | MIT | Python bindings for MeshLab |
 | UV展开 | xatlas | MIT | No dependencies, embeddable |
-| 材质烘焙 | Blender (bpy) | GPLv3 | `pip install bpy`, in-process |
+| 材质烘焙 | Blender (bpy) | GPLv3 | subprocess `blender --background --python`, file-based I/O |
 | 骨骼绑定 | Rigify (Blender) | GPLv3 | Mature, well-documented |
 | 骨骼绑定 (增强) | UniRig | Open | SIGGRAPH 2025, TripoSR team |
 | 文本驱动动画 | HY-Motion 1.0 Lite | Apache 2.0 | 460M params, ~24GB VRAM |
@@ -402,11 +464,19 @@ Rules:
 | TripoSR/SF3D | Long-running GPU worker | 1 GPU (6-8GB) | Can time-share with SDXL |
 | Instant Meshes | CPU worker | No GPU | Binary execution |
 | xatlas | Embedded in Blender worker | No GPU | `pip install` or compile |
-| Blender | `import bpy` (in-process) | No GPU | No subprocess, no cold start |
+| Blender | subprocess (`blender --background --python`) | No GPU | Process isolation, thread-safe |
 | Rigify/UniRig | Embedded in Blender worker | No GPU | Via bpy API |
 | HY-Motion | Long-running GPU worker | 1 GPU (24GB) | Dedicated GPU, stays loaded |
 | rembg | CPU worker (或共享 GPU worker) | 可选 GPU 加速 | `pip install rembg`, ONNX Runtime |
 | Real-ESRGAN | CPU/GPU worker | 可选 GPU 加速 | `pip install realesrgan`, PyTorch |
+
+### Blender Integration (subprocess)
+
+**Design Decision**: Blender runs as an isolated subprocess, not in-process.
+
+- **Why**: `import bpy` creates a global singleton that is not thread-safe. In a Celery worker with multiple tasks, concurrent bpy calls cause crashes. subprocess isolation guarantees safety.
+- **How**: `BlenderBridge` class wraps `blender --background --python script.py`. Input/output via file system (JSON params in, .glb/.png out).
+- **Fallback**: In local dev without Blender installed, fall back to `trimesh`-based pure Python processing (limited but functional).
 
 ### GPU Scheduling
 
@@ -419,6 +489,15 @@ Dual GPU (e.g., 2x A10G):
   GPU0: SDXL + TripoSR (round-robin, <10GB each)
   GPU1: HY-Motion (dedicated, 24GB, stays loaded)
 ```
+
+### GPU Worker Configuration
+
+**Design Decision**: Each GPU worker runs with `--pool=solo --concurrency=1`.
+
+- **Why**: PyTorch model cache uses module-level variables + threading.Lock. This only works in a single-process model. Celery prefork creates separate processes where cache is not shared.
+- **How**: One Celery worker per GPU, solo pool, concurrency=1. Models stay loaded in memory between tasks (no repeated loading).
+- **Queue routing**: GPU tasks route to `gpu` queue, CPU tasks to `cpu` queue, pipeline orchestration to `pipeline` queue.
+- **Scaling**: Add more GPUs = launch more workers, each bound to a specific GPU via `CUDA_VISIBLE_DEVICES`.
 
 ---
 
@@ -441,6 +520,8 @@ Performance:
 - 500K faces: BatchedMesh to reduce draw calls
 - Draco geometry + KTX2 texture compression
 
+> Server-side LOD and KTX2 compression are [v2] enhancements.
+
 ## 2D Asset Viewer
 
 ### Tech: Plain React + Canvas
@@ -453,6 +534,8 @@ Features:
 - 9-Patch 拉伸标记可视化
 - 多尺寸同屏对比（64 / 128 / 256 / 512 并排展示）
 - 元数据叠加（尺寸、文件大小、DPI、用途类型）
+
+> Sprite Sheet 帧播放 and 9-Patch 可视化 are [v2] features. v1 supports single PNG preview only.
 
 ---
 
@@ -487,6 +570,7 @@ No `.unitypackage` generation needed for v1.
 | AI generation records | PostgreSQL + S3 | Params in DB, artifacts in object storage |
 | Version history | S3 blob-per-version | Simple, reliable, garbage collect old versions |
 | Team source files (.blend/.psd) | SVN or Git LFS (external) | Platform manages published assets only |
+| Quota / cost tracking | TBD [v2] | Per-team generation limits and cost monitoring |
 
 ---
 
@@ -660,7 +744,7 @@ Guides AI agents to construct effective prompts for the art pipeline, including 
 | Task Queue | Celery + Redis | GPU/CPU worker routing |
 | Containers | Docker Compose (v1) → K8s (later) | Start simple |
 | AI Inference | diffusers + custom workers | Python-native, Docker GPU passthrough |
-| 3D Processing | `import bpy` (in-process) + xatlas + Instant Meshes | No subprocess overhead |
+| 3D Processing | Blender (subprocess) + xatlas + Instant Meshes | Process isolation, thread-safe |
 | Animation | HY-Motion 1.0 Lite (460M, local) | Free, Apache 2.0, offline |
 
 ---
@@ -679,7 +763,7 @@ Week 3-4: Pipeline Stage 1-4 (3D) + Stage 1-3 (2D)
   ├── Stage 1: SDXL text-to-image (candidate concept images) [共享]
   ├── Stage 2: TripoSR image-to-3D
   ├── Stage 3: Instant Meshes cleanup
-  ├── Stage 4: xatlas UV + bpy material baking
+  ├── Stage 4: xatlas UV + Blender subprocess material baking
   ├── 2D Stage 2: rembg 去背景 + 尺寸标准化
   └── 2D Stage 3: PNG / Sprite Sheet / 9-Patch 产出
 

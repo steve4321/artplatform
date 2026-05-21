@@ -54,23 +54,27 @@
 
 **三种运行模式**：
 
-| 模式 | 环境变量 | GPU | AI 成本 | 用途 |
+| 模式 | 配置方式 | GPU | AI 成本 | 用途 |
 |------|---------|-----|--------|------|
-| `mock` | `PROCESSOR_MODE=mock` | 无 | ¥0 | 开发测试 |
-| `cloud` | `PROCESSOR_MODE=cloud` | 无 | 按量付费 | 初期验证 |
-| `local` | `PROCESSOR_MODE=local` | 需要 | 电费 | 生产降本 |
+| `mock` | Settings 页面或 DB 默认 | 无 | ¥0 | 开发测试 |
+| `cloud` | Settings 页面配置 cloud_provider + api_key | 无 | 按量付费 | 初期验证 |
+| `local` | Settings 页面切换 | 需要 | 电费 | 生产降本 |
 
-**Provider 切换示例**：
+> **设计决策**：Provider 模式通过 Settings 页面（`provider_settings` DB 表）按阶段独立配置，而非全局环境变量。创建管线时自动读取 DB 设置作为默认值（优先级：API 显式配置 > DB 设置 > pipeline_configs 默认）。
+
+**Provider 切换方式**：
 
 ```bash
-# 换主 Provider（改一行 env）
+# 方式 1: Web UI — Settings > Pipeline Providers 页面（推荐）
+# 每个阶段独立选择 mock / local / cloud，填入 API Key
+
+# 方式 2: API 调用
+curl -X PUT http://localhost:8000/api/v1/settings/providers/text_to_image \
+  -H "Authorization: Bearer <token>" \
+  -d '{"mode": "cloud", "cloud_provider": "stability_ai", "api_key": "sk-xxx"}'
+
+# 方式 3: 环境变量（向后兼容，DB 设置优先）
 TEXT_TO_IMAGE_PROVIDER=fal_ai
-
-# 加 Fallback（逗号分隔）
-TEXT_TO_IMAGE_FALLBACKS=replicate,stability_ai
-
-# 成本优先路由
-PROVIDER_COST_PRIORITY=true
 ```
 
 ---
@@ -863,19 +867,24 @@ ms.save_current_mesh(output_path)
 
 ---
 
-## Stage 4: UV + 材质烘焙 (xatlas + bpy)
+## Stage 4: UV + 材质烘焙 (xatlas + Blender subprocess)
 
 ### 工具概要
 
 | 工具 | 功能 | 安装方式 |
 |------|------|---------|
 | xatlas | 自动 UV 展开 | `pip install xatlas` (需编译) 或 Blender Smart UV Project |
-| Blender (bpy) | 材质烘焙、网格处理 | `pip install bpy>=4.1.0` |
-| PBR 纹理生成 | 从顶点色/颜色生成 PBR 贴图 | bpy 自定义脚本 |
+| Blender (subprocess) | 材质烘焙、网格处理 | `blender --background --python script.py` |
+| PBR 纹理生成 | 从顶点色/颜色生成 PBR 贴图 | Blender Python 脚本 |
 
-### 方案 A: bpy + Smart UV Project（推荐）
+> **设计决策**：Blender 通过 subprocess 调用（`blender --background --python script.py`），不使用 `import bpy` in-process。原因：bpy 是全局单例、非线程安全，Celery 多任务并发会导致崩溃。subprocess 隔离保证安全性。
+> 本文档中的代码示例使用 `import bpy` 语法展示逻辑，实际部署时需要封装为独立 `.py` 脚本，由 `BlenderBridge` 类通过 subprocess 调用。
 
-使用 Blender 内置的 Smart UV Project 替代 xatlas（避免 C++ 编译依赖）。
+### 方案 A: Blender subprocess + Smart UV Project（推荐）
+
+使用 Blender subprocess 调用 Smart UV Project 替代 xatlas（避免 C++ 编译依赖）。
+
+> **注意**：以下代码展示的是 Blender 脚本内部的逻辑。实际集成时，这段代码保存为独立 `.py` 文件，由 `BlenderBridge` 通过 `blender --background --python uv_material.py` 调用。输入参数通过 JSON 文件传递，输出文件通过文件系统读取。
 
 ```python
 # backend/app/workers/stage_processors/uv_material.py
@@ -1039,12 +1048,20 @@ def _bake_vertex_color_to_texture(obj, mat, bsdf, output_dir: str, resolution: i
     nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1.0)
 ```
 
-**安装 bpy**：
+**安装 Blender（subprocess 模式）**：
 
 ```bash
-pip install bpy>=4.1.0
-# bpy 是 Blender 的 Python 绑定，4.1+ 版本以 pip 包形式分发
-# 注意: bpy 与系统安装的 Blender 冲突，建议只用 pip 版本
+# 方式 1：系统安装 Blender（推荐 subprocess 模式）
+# Ubuntu/Debian:
+sudo apt install blender
+# 或从 https://www.blender.org/download/ 下载
+
+# 方式 2：pip 安装 bpy（仅用于开发/测试，不推荐生产使用）
+# pip install bpy>=4.1.0
+# 注意: bpy 是全局单例、非线程安全，不适合 Celery 多任务环境
+
+# subprocess 模式无需额外安装 Python 包
+# BlenderBridge 通过 subprocess.Popen 调用系统 Blender
 ```
 
 ### 方案 B: xatlas UV 展开（高级）
@@ -1095,7 +1112,7 @@ new_mesh = trimesh.Trimesh(
 | RAM 需求 | 8 GB+ |
 | 前提 | 网格需近似人形 |
 
-### 方案: Rigify via bpy
+### 方案: Rigify via Blender subprocess
 
 ```python
 # backend/app/workers/stage_processors/rig.py
@@ -1411,7 +1428,9 @@ class HYMotionProcessor(PipelineProcessor):
         bvh_path = os.path.join(output_dir, "motion.bvh")
         motion.save_bvh(bvh_path)
 
-        # ── 通过 bpy 将 BVH 应用到骨骼网格 ──
+        # ── 通过 Blender subprocess 将 BVH 应用到骨骼网格 ──
+        # 实际实现：生成一个 .py 脚本，由 BlenderBridge 通过 subprocess 调用
+        # 以下为脚本内部逻辑（不是 Celery worker 直接执行）
         bpy.ops.object.select_all(action="SELECT")
         bpy.ops.object.delete()
 
@@ -1623,18 +1642,32 @@ bvh_data = response.content
 
 **Phase 1 架构调整**：
 
+> **注意**：以下为原始设计。当前已实现 DB 驱动的 provider settings（`provider_settings` 表 + Settings 页面），创建管线时自动从 DB 读取每阶段的 mode/processor/cloud_provider 配置，不再依赖全局 `PROCESSOR_MODE` 环境变量。
+
 ```python
 # backend/app/workers/stage_processors/__init__.py
-import os
+# 当前实现：导入所有可用处理器，按 step config 动态选择
+# 每个 step 的 config 中包含 mode / processor_name / cloud_provider 等字段
+# 这些字段来自 DB provider_settings 表（创建管线时自动合并）
 
-_MODE = os.environ.get("PROCESSOR_MODE", "mock").lower()
+from . import mock  # mock 处理器始终可用
+from . import text_to_image  # mock 实现
+from . import image_to_3d    # mock 实现
+from . import mesh_cleanup   # mock 实现
+from . import uv_material    # mock 实现
+from . import rigging        # mock 实现
+from . import post_process   # mock 实现 (2D)
+from . import format_output  # mock 实现 (2D)
 
-if _MODE == "mock":
-    import app.workers.stage_processors.mock
-elif _MODE == "cloud":
-    from . import text_to_image, image_to_3d, cleanup, uv_material, rig, animate
-elif _MODE == "local":
-    from . import text_to_image, image_to_3d, cleanup, uv_material, rig, animate
+# 真实处理器按需加载（安装了依赖后自动可用）
+try:
+    from . import text_to_image_cloud  # cloud: stability_ai / fal_ai / replicate
+except ImportError:
+    pass
+try:
+    from . import image_to_3d_cloud    # cloud: tripo_cloud / meshy_ai / csm_ai
+except ImportError:
+    pass
 ```
 
 ### Phase 2: 自托管推理 (2-4 周)
