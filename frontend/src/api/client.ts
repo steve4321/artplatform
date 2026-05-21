@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+let isRedirecting = false;
+
 function transformKeysToCamelCase<T>(obj: T): T {
   if (obj === null || obj === undefined) {
     return obj;
@@ -51,6 +53,10 @@ client.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('auth_token');
+      if (!isRedirecting && !window.location.pathname.includes('/login')) {
+        isRedirecting = true;
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
