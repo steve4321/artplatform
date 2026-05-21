@@ -3,13 +3,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, JSON, Text, func, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 _RUN_STATUSES = ("pending", "running", "paused", "completed", "partial", "failed")
 _STEP_STATUSES = ("pending", "running", "completed", "failed", "skipped")
+
+
+_PIPELINE_TYPES = ("3d_scene", "3d_character", "2d_art")
 
 
 class PipelineRun(Base):
@@ -19,6 +22,11 @@ class PipelineRun(Base):
             f"status IN {repr(_RUN_STATUSES)}",
             name="ck_pipeline_runs_status",
         ),
+        CheckConstraint(
+            f"pipeline_type IN {repr(_PIPELINE_TYPES)}",
+            name="ck_pipeline_runs_pipeline_type",
+        ),
+        Index("idx_pipeline_runs_pipeline_type", "pipeline_type"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -33,6 +41,7 @@ class PipelineRun(Base):
     reference_image_key: Mapped[str | None] = mapped_column(
         Text, nullable=True,
     )
+    pipeline_type: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'3d_scene'"))
     status: Mapped[str] = mapped_column(Text, nullable=False)
     config: Mapped[dict] = mapped_column(JSON, nullable=False)
     total_stages: Mapped[int | None] = mapped_column(Integer, nullable=True)

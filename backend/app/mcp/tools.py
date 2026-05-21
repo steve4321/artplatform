@@ -25,6 +25,7 @@ async def generate_3d_asset(
     prompt: str,
     style: str | None = None,
     reference_image_url: str | None = None,
+    pipeline_type: str = "3d_character",
 ) -> str:
     """Generate a 3D art asset from a text prompt.
 
@@ -35,6 +36,8 @@ async def generate_3d_asset(
         prompt: Text description of the desired asset (e.g., "a low-poly fantasy sword")
         style: Optional style modifier (e.g., "low-poly", "realistic", "cartoon")
         reference_image_url: Optional URL to a reference image
+        pipeline_type: Pipeline type — "3d_character" (default, includes rigging)
+            or "3d_scene" (no rigging)
 
     Returns:
         JSON with pipeline_id and asset_id for tracking
@@ -44,6 +47,7 @@ async def generate_3d_asset(
         body["style"] = style
     if reference_image_url:
         body["reference_image_url"] = reference_image_url
+    body["pipeline_type"] = pipeline_type
     data = await api_post("/api/v1/pipelines", json=body)
     return _json_str(data)
 
