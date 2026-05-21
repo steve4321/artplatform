@@ -156,6 +156,10 @@ class ExportService:
         return self.storage.generate_presigned_url(fbx_key)
 
     def _convert_glb_to_fbx_blender(self, glb_data: bytes, blender_bin: str) -> bytes:
+        """Convert GLB to FBX using Blender as a subprocess.
+
+        ``bpy`` is not thread-safe, so each conversion runs in an isolated process.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             glb_path = os.path.join(tmpdir, "input.glb")
             fbx_path = os.path.join(tmpdir, "output.fbx")

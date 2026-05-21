@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 # Module-level model cache – loaded once, reused across calls.
 # Protected by a lock so that concurrent Celery workers don't race.
+#
+# NOTE: This lock is safe ONLY when Celery uses --pool=solo --concurrency=1
+# (one task per worker process). With prefork pool, processes don't share
+# memory, so module-level cache is per-process anyway. The lock protects
+# against concurrent threads within the same solo worker process.
 _pipeline = None
 _pipeline_lock = threading.Lock()
 _device: str | None = None
