@@ -119,6 +119,7 @@ class ImageTo3DCloudProcessor(PipelineProcessor):
             "tripo_cloud": ("app.ai.providers.tripo_cloud", "TripoCloudProvider"),
             "meshy_ai": ("app.ai.providers.meshy_ai", "MeshyAIProvider"),
             "csm_ai": ("app.ai.providers.csm_ai", "CSMAIProvider"),
+            "volcengine": ("app.ai.providers.volcengine", "VolcengineProvider"),
         }
 
         if name not in provider_map:

@@ -106,7 +106,7 @@ STAGE_DEFINITIONS: list[dict] = [
             {"mode": "local", "label": "本地模型 (SDXL)", "processor_name": "sdxl"},
             {"mode": "cloud", "label": "云端 API", "processor_name": "sdxl_cloud"},
         ],
-        "cloud_providers": ["stability_ai", "fal_ai", "replicate", "comfyui"],
+        "cloud_providers": ["stability_ai", "fal_ai", "replicate", "comfyui", "volcengine"],
     },
     {
         "stage": "image_to_3d",
@@ -117,7 +117,7 @@ STAGE_DEFINITIONS: list[dict] = [
             {"mode": "local", "label": "本地模型 (TripoSR)", "processor_name": "triposr"},
             {"mode": "cloud", "label": "云端 API", "processor_name": "image_to_3d_cloud"},
         ],
-        "cloud_providers": ["tripo_cloud", "meshy_ai", "csm_ai"],
+        "cloud_providers": ["tripo_cloud", "meshy_ai", "csm_ai", "volcengine"],
     },
     {
         "stage": "mesh_cleanup",

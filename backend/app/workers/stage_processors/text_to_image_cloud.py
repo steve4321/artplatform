@@ -101,6 +101,7 @@ class SdxlCloudProcessor(PipelineProcessor):
             "fal_ai": ("app.ai.providers.fal_ai", "FalAIProvider"),
             "replicate": ("app.ai.providers.replicate", "ReplicateProvider"),
             "comfyui": ("app.ai.providers.comfyui", "ComfyUIProvider"),
+            "volcengine": ("app.ai.providers.volcengine", "VolcengineProvider"),
         }
 
         if name not in provider_map:
