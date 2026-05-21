@@ -5,10 +5,10 @@ ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
 WORKDIR /build
 
-RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} --prefix=/install .
-
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} --prefix=/install -e .
+COPY app/ app/
+
+RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} --prefix=/install .
 
 FROM python:3.11-slim
 
