@@ -59,9 +59,12 @@ npm run dev        # 开发服务器 http://localhost:5173
 
 ### 自动转换
 
-`client.ts` 拦截所有请求/响应，自动做 **snake_case → camelCase** 转换：
-- 请求： `{ pipeline_type: "3d_scene" }` → `{ pipelineType: "3d_scene" }`
-- 响应： `{ pipeline_run_id: "..." }` → `{ pipelineRunId: "..." }`
+`client.ts` 拦截所有请求/响应，在前后端命名风格之间自动转换：
+
+| 方向 | 转换 | 示例 |
+|------|------|------|
+| 请求（前端 → 后端） | **camelCase → snake_case** | `{ pipelineType: "3d_scene" }` → 发送 `{ pipeline_type: "3d_scene" }` |
+| 响应（后端 → 前端） | **snake_case → camelCase** | 收到 `{ pipeline_run_id: "..." }` → 组件内使用 `{ pipelineRunId: "..." }` |
 
 **注意**：URL 路径参数不转换（如 `/pipelines/{id}` 中的 `id`）
 

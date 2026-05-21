@@ -25,6 +25,29 @@ function transformKeysToCamelCase<T>(obj: T): T {
   return obj;
 }
 
+function transformKeysToSnakeCase<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformKeysToSnakeCase) as unknown as T;
+  }
+
+  if (typeof obj === 'object' && !Array.isArray(obj)) {
+    const result: Record<string, unknown> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+        result[snakeKey] = transformKeysToSnakeCase((obj as Record<string, unknown>)[key]);
+      }
+    }
+    return result as T;
+  }
+
+  return obj;
+}
+
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   headers: {
@@ -37,6 +60,9 @@ client.interceptors.request.use(
     const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (config.data && config.method !== 'get') {
+      config.data = transformKeysToSnakeCase(config.data);
     }
     return config;
   },

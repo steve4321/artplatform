@@ -34,3 +34,4 @@
 - **状态机验证**：状态转换必须通过 `is_valid_transition()` 验证
 - **Provider 设置按管线类型独立**：3D 场景/3D 角色/2D 各有独立的默认模式和阶段覆盖，支持 `skip` 模式跳过不需要的阶段。`pipeline_defaults` 表存储每种管线类型的默认模式，`provider_settings` 表按 `(pipeline_type, stage)` 存储覆盖配置。创建管线时自动应用（优先级：API 显式配置 > 默认模式/DB 设置 > pipeline_configs 默认）
 - **云 Provider 运行时注册**：cloud processor 从 step config 读取 `cloud_provider`/`api_key`，无需预配环境变量即可使用第三方 API
+- **Setting 统一保存（无自动保存）**：Settings 页所有模式（local/cloud/mock）的每个管线类型下，各阶段配置统一通过该管线类型的"保存"按钮提交。保存顺序：各阶段设置（直接 API，不刷新）→ 默认模式 → 单次刷新结束。StageCard 使用 `forwardRef`/`useImperativeHandle` 暴露 `getPayload()`，由 PipelineSection 统一读取并保存。

@@ -340,7 +340,7 @@ cd backend
 LOCAL_DEV=true python -m pytest tests/ -v
 ```
 
-测试覆盖：认证 (6)、资产 CRUD (11)、管线 (6)、审批 (5)、团队 (5)、Provider 设置 (10+)。
+测试覆盖：认证 (6)、资产 CRUD (11)、管线 (6)、审批 (5)、团队 (5)、Provider 设置 (13+)。
 
 ## 开发状态
 

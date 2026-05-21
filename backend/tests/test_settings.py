@@ -283,3 +283,70 @@ async def test_pipeline_type_isolation(client, auth_headers):
 
     assert tti_3d["mode"] == "cloud"
     assert tti_2d["mode"] == "local"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_respects_default_mode_mock(client, auth_headers):
+    """Pipeline creation uses default_mode processors when not 'custom'."""
+    await client.put(
+        "/api/v1/settings/providers/defaults",
+        json={"pipeline_type": "2d_art", "default_mode": "mock"},
+        headers=auth_headers,
+    )
+
+    resp = await client.post(
+        "/api/v1/pipelines",
+        json={"prompt": "test mock default", "pipeline_type": "2d_art"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["total_stages"] == 3
+    assert len(data["steps"]) == 3
+    for step in data["steps"]:
+        assert "_mock" in step["processor_name"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_skips_stages_with_skip_mode(client, auth_headers):
+    """Pipeline creation skips stages whose provider setting has mode='skip'."""
+    await client.put(
+        "/api/v1/settings/providers/3d_character/uv_material",
+        json={"mode": "skip"},
+        headers=auth_headers,
+    )
+
+    resp = await client.post(
+        "/api/v1/pipelines",
+        json={"prompt": "test skip stages", "pipeline_type": "3d_character"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    stage_names = [s["stage"] for s in data["steps"]]
+    assert "uv_material" not in stage_names
+    assert "text_to_image" in stage_names
+    assert "image_to_3d" in stage_names
+    assert "mesh_cleanup" in stage_names
+    assert "rigging" in stage_names
+    assert data["total_stages"] == 4
+
+
+@pytest.mark.asyncio
+async def test_pipeline_defaults_isolation(client, auth_headers):
+    """Setting default for one pipeline_type doesn't affect pipelines of another type."""
+    await client.put(
+        "/api/v1/settings/providers/defaults",
+        json={"pipeline_type": "2d_art", "default_mode": "mock"},
+        headers=auth_headers,
+    )
+
+    resp = await client.post(
+        "/api/v1/pipelines",
+        json={"prompt": "test isolation", "pipeline_type": "3d_character"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    for step in data["steps"]:
+        assert "_mock" in step["processor_name"]
