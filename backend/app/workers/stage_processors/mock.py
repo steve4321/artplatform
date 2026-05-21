@@ -163,7 +163,7 @@ class MockImageTo3D(MockPipelineProcessor):
 
 @register
 class MockCleanup(MockPipelineProcessor):
-    stage = "cleanup"
+    stage = "mesh_cleanup"
     name = "instant_meshes_mock"
 
     def _produce_output(self, input_artifacts, config, output_dir):
@@ -230,7 +230,7 @@ class MockUVMaterial(MockPipelineProcessor):
 
 @register
 class MockRig(MockPipelineProcessor):
-    stage = "rig"
+    stage = "rigging"
     name = "rigify_mock"
 
     def _produce_output(self, input_artifacts, config, output_dir):
@@ -275,7 +275,7 @@ class MockAnimate(MockPipelineProcessor):
 
 @register
 class MockPostprocess2D(MockPipelineProcessor):
-    stage = "postprocess_2d"
+    stage = "post_process"
     name = "rembg_esrgan_mock"
 
     def _produce_output(self, input_artifacts, config, output_dir):
@@ -311,7 +311,7 @@ class MockPostprocess2D(MockPipelineProcessor):
 
 @register
 class MockFormatOutput2D(MockPipelineProcessor):
-    stage = "format_output_2d"
+    stage = "format_output"
     name = "png_sprite_9patch_mock"
 
     def _produce_output(self, input_artifacts, config, output_dir):

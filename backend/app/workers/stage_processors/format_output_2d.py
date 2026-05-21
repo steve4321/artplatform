@@ -161,7 +161,7 @@ def _output_9patch(images: list[Image.Image], output_dir: str, padding: int) -> 
 
 @register
 class FormatOutput2D(PipelineProcessor):
-    stage = "format_output_2d"
+    stage = "format_output"
     name = "png_sprite_9patch"
     requires_gpu = False
     estimated_duration_s = 3

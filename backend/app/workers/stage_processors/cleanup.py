@@ -103,7 +103,7 @@ def _run_pymeshlab_cleanup(
 
 @register
 class CleanupInstantMeshes(PipelineProcessor):
-    stage = "cleanup"
+    stage = "mesh_cleanup"
     name = "instant_meshes"
     requires_gpu = False
     estimated_duration_s = 20

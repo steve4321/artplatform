@@ -86,7 +86,7 @@ def _run_blender_rig(
 
 @register
 class RigRigify(PipelineProcessor):
-    stage = "rig"
+    stage = "rigging"
     name = "rigify"
     requires_gpu = False
     estimated_duration_s = 60

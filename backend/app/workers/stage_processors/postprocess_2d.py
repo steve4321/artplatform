@@ -80,7 +80,7 @@ def _upscale_image(image: Image.Image, scale: int) -> Image.Image:
 
 @register
 class Postprocess2D(PipelineProcessor):
-    stage = "postprocess_2d"
+    stage = "post_process"
     name = "rembg_esrgan"
     requires_gpu = False
     estimated_duration_s = 10
