@@ -96,7 +96,9 @@ def get_pipeline_stages(pipeline_type: str) -> list[dict[str, str]]:
 
 
 # ── Stage definitions for provider settings UI ─────────────────────────────
-STAGE_DEFINITIONS: list[dict] = [
+# Grouped by pipeline type so the UI can render sections independently.
+
+_STAGE_DEFS_3D_SCENE = [
     {
         "stage": "text_to_image",
         "label": "文生图",
@@ -124,16 +126,9 @@ STAGE_DEFINITIONS: list[dict] = [
         "label": "网格清理",
         "description": "清理和优化3D网格拓扑",
         "modes": [
-            {
-                "mode": "mock",
-                "label": "Mock (模拟)",
-                "processor_name": "instant_meshes_mock",
-            },
-            {
-                "mode": "local",
-                "label": "本地工具 (Instant Meshes)",
-                "processor_name": "instant_meshes",
-            },
+            {"mode": "skip", "label": "跳过", "processor_name": "skip"},
+            {"mode": "mock", "label": "Mock (模拟)", "processor_name": "instant_meshes_mock"},
+            {"mode": "local", "label": "本地工具 (Instant Meshes)", "processor_name": "instant_meshes"},
         ],
         "cloud_providers": [],
     },
@@ -142,44 +137,47 @@ STAGE_DEFINITIONS: list[dict] = [
         "label": "UV与材质",
         "description": "UV展开和PBR材质烘焙",
         "modes": [
-            {
-                "mode": "mock",
-                "label": "Mock (模拟)",
-                "processor_name": "xatlas_bpy_mock",
-            },
-            {
-                "mode": "local",
-                "label": "本地工具 (xatlas + Blender)",
-                "processor_name": "xatlas_bpy",
-            },
+            {"mode": "skip", "label": "跳过", "processor_name": "skip"},
+            {"mode": "mock", "label": "Mock (模拟)", "processor_name": "xatlas_bpy_mock"},
+            {"mode": "local", "label": "本地工具 (xatlas + Blender)", "processor_name": "xatlas_bpy"},
         ],
         "cloud_providers": [],
     },
+]
+
+_STAGE_DEFS_3D_CHARACTER = _STAGE_DEFS_3D_SCENE + [
     {
         "stage": "rigging",
         "label": "骨骼绑定",
         "description": "自动骨骼绑定和蒙皮",
         "modes": [
+            {"mode": "skip", "label": "跳过", "processor_name": "skip"},
             {"mode": "mock", "label": "Mock (模拟)", "processor_name": "rigify_mock"},
             {"mode": "local", "label": "本地工具 (Rigify)", "processor_name": "rigify"},
         ],
         "cloud_providers": [],
+    },
+]
+
+_STAGE_DEFS_2D = [
+    {
+        "stage": "text_to_image",
+        "label": "文生图",
+        "description": "从文字提示词生成概念图",
+        "modes": [
+            {"mode": "mock", "label": "Mock (模拟)", "processor_name": "sdxl_mock"},
+            {"mode": "local", "label": "本地模型 (SDXL)", "processor_name": "sdxl"},
+            {"mode": "cloud", "label": "云端 API", "processor_name": "sdxl_cloud"},
+        ],
+        "cloud_providers": ["stability_ai", "fal_ai", "replicate", "comfyui", "volcengine"],
     },
     {
         "stage": "post_process",
         "label": "后处理 (2D)",
         "description": "去背景、超分辨率等2D后处理",
         "modes": [
-            {
-                "mode": "mock",
-                "label": "Mock (模拟)",
-                "processor_name": "rembg_esrgan_mock",
-            },
-            {
-                "mode": "local",
-                "label": "本地工具 (rembg + ESRGAN)",
-                "processor_name": "rembg_esrgan",
-            },
+            {"mode": "mock", "label": "Mock (模拟)", "processor_name": "rembg_esrgan_mock"},
+            {"mode": "local", "label": "本地工具 (rembg + ESRGAN)", "processor_name": "rembg_esrgan"},
         ],
         "cloud_providers": [],
     },
@@ -195,12 +193,34 @@ STAGE_DEFINITIONS: list[dict] = [
     },
 ]
 
+# Public API: per-pipeline-type stage definitions
+STAGE_DEFINITIONS: dict[str, list[dict]] = {
+    "3d_scene": _STAGE_DEFS_3D_SCENE,
+    "3d_character": _STAGE_DEFS_3D_CHARACTER,
+    "2d_art": _STAGE_DEFS_2D,
+}
+
+# Convenience: all stages flat (for lookups by stage name)
+_ALL_STAGES_FLAT: list[dict] = []
+for _sd_list in STAGE_DEFINITIONS.values():
+    for _sd in _sd_list:
+        if _sd not in _ALL_STAGES_FLAT:
+            _ALL_STAGES_FLAT.append(_sd)
+
+
+def get_stage_definition(stage: str) -> dict | None:
+    """Look up a stage definition by stage name across all pipeline types."""
+    for sd in _ALL_STAGES_FLAT:
+        if sd["stage"] == stage:
+            return sd
+    return None
+
 
 def get_processor_name_for_mode(stage: str, mode: str) -> str:
     """Look up the processor_name for a given stage+mode from STAGE_DEFINITIONS."""
-    for sd in STAGE_DEFINITIONS:
-        if sd["stage"] == stage:
-            for m in sd["modes"]:
-                if m["mode"] == mode:
-                    return m["processor_name"]
+    sd = get_stage_definition(stage)
+    if sd:
+        for m in sd["modes"]:
+            if m["mode"] == mode:
+                return m["processor_name"]
     return f"{stage}_{mode}"
