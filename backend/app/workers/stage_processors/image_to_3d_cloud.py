@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def _build_router(primary_env: str, fallbacks_env: str) -> ProviderRouter | None:
     primary = os.environ.get(primary_env)
-    fallback_str = os.environ.get(fallback_env, "")
+    fallback_str = os.environ.get(fallbacks_env, "")
     fallbacks = [f.strip() for f in fallback_str.split(",") if f.strip()] or []
 
     if not primary and not fallbacks:
@@ -55,14 +55,22 @@ class ImageTo3DCloudProcessor(PipelineProcessor):
             a.get("file_format") in ("png", "jpg", "jpeg", "webp")
             for a in input_artifacts
         )
-        return has_image and self._router is not None
+        has_config_provider = bool(config.get("cloud_provider") and config.get("api_key"))
+        return has_image and (self._router is not None or has_config_provider)
 
     def run(self, input_artifacts: list[dict], config: dict, output_dir: str) -> list[dict]:
         if self._router is None:
-            raise RuntimeError(
-                "No IMAGE_TO_3D_PROVIDER configured. "
-                "Set IMAGE_TO_3D_PROVIDER env var."
-            )
+            cloud_provider = config.get("cloud_provider")
+            api_key = config.get("api_key")
+            base_url = config.get("base_url")
+            if cloud_provider and api_key:
+                provider = self._register_provider_from_config(cloud_provider, api_key, base_url)
+                self._router = ProviderRouter(primary=cloud_provider)
+            else:
+                raise RuntimeError(
+                    "No IMAGE_TO_3D_PROVIDER configured. "
+                    "Set IMAGE_TO_3D_PROVIDER env var or provide cloud_provider/api_key in config."
+                )
 
         image_artifact = next(
             (
@@ -79,7 +87,6 @@ class ImageTo3DCloudProcessor(PipelineProcessor):
         if not local_path or not os.path.isfile(local_path):
             raise FileNotFoundError(f"Input image not found: {local_path}")
 
-        # Upload image to a temp URL for providers that require URLs
         image_url = self._upload_for_provider(local_path)
         style = config.get("art_style", "realistic")
 
@@ -103,6 +110,29 @@ class ImageTo3DCloudProcessor(PipelineProcessor):
             }
             for a in assets
         ]
+
+    def _register_provider_from_config(self, name: str, api_key: str, base_url: str | None):
+        from app.ai.base import ProviderConfig
+        from app.ai.router import register_provider
+
+        provider_map = {
+            "tripo_cloud": ("app.ai.providers.tripo_cloud", "TripoCloudProvider"),
+            "meshy_ai": ("app.ai.providers.meshy_ai", "MeshyAIProvider"),
+            "csm_ai": ("app.ai.providers.csm_ai", "CSMAIProvider"),
+        }
+
+        if name not in provider_map:
+            raise ValueError(f"Unknown cloud provider: {name}")
+
+        module_path, class_name = provider_map[name]
+        import importlib
+        module = importlib.import_module(module_path)
+        provider_cls = getattr(module, class_name)
+
+        config = ProviderConfig(api_key=api_key, base_url=base_url)
+        provider = provider_cls(config)
+        register_provider(name, provider)
+        return provider
 
     def _upload_for_provider(self, local_path: str) -> str | None:
         """Upload image to a temporary URL for providers that need URLs.
