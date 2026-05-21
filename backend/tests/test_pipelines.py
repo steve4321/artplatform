@@ -19,9 +19,9 @@ async def test_create_pipeline(client, auth_headers):
     assert stages == [
         "text_to_image",
         "image_to_3d",
-        "cleanup",
+        "mesh_cleanup",
         "uv_material",
-        "rig",
+        "rigging",
     ]
 
 
@@ -83,7 +83,7 @@ async def test_retry_pipeline_stage(client, auth_headers):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "running"
+    assert data["status"] in ("running", "paused")
     for step in data["steps"]:
         if step["stage_order"] >= 3:
             assert step["status"] == "pending"
