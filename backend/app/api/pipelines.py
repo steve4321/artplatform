@@ -15,7 +15,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
 from app.models import Asset, Artifact, PipelineRun, PipelineStep, User
-from app.pipeline.pipeline_configs import get_pipeline_stages
+from app.pipeline.pipeline_configs import (
+    get_pipeline_stages,
+    get_processor_name_for_mode,
+)
 from app.schemas.asset import AssetType
 from app.schemas.pipeline import (
     PipelineCreate,
@@ -85,41 +88,65 @@ async def create_pipeline(
     await db.flush()
 
     from app.models.provider_setting import ProviderSetting
-    ps_result = await db.execute(select(ProviderSetting))
+    from app.models.pipeline_default import PipelineDefault
+
+    pd_result = await db.execute(
+        select(PipelineDefault).where(PipelineDefault.pipeline_type == payload.pipeline_type)
+    )
+    pipeline_default = pd_result.scalar_one_or_none()
+    default_mode = pipeline_default.default_mode if pipeline_default else "custom"
+
+    ps_result = await db.execute(
+        select(ProviderSetting).where(ProviderSetting.pipeline_type == payload.pipeline_type)
+    )
     provider_settings = {ps.stage: ps for ps in ps_result.scalars().all()}
 
-    for idx, stage_def in enumerate(stages, start=1):
+    actual_stages: list[PipelineStep] = []
+    for stage_def in stages:
         stage_config = config_dict.get("stages", {}).get(stage_def["stage"], {})
-
         db_setting = provider_settings.get(stage_def["stage"])
+
         if stage_config.get("processor_name"):
             processor_name = stage_config["processor_name"]
+            is_skip = False
+        elif default_mode != "custom":
+            is_skip = default_mode == "skip"
+            processor_name = get_processor_name_for_mode(stage_def["stage"], default_mode)
         elif db_setting:
+            is_skip = db_setting.mode == "skip"
             processor_name = db_setting.processor_name
         else:
+            is_skip = False
             processor_name = stage_def["processor_name"]
 
+        if is_skip:
+            continue
+
         step_config = {}
-        if db_setting and db_setting.mode == "cloud":
-            step_config["cloud_provider"] = db_setting.cloud_provider
-            if db_setting.api_key:
-                step_config["api_key"] = db_setting.api_key
-            if db_setting.base_url:
-                step_config["base_url"] = db_setting.base_url
-            if db_setting.extra_config:
-                step_config.update(db_setting.extra_config)
+        source = db_setting
+        if source and source.mode == "cloud":
+            if source.cloud_provider:
+                step_config["cloud_provider"] = source.cloud_provider
+            if source.api_key:
+                step_config["api_key"] = source.api_key
+            if source.base_url:
+                step_config["base_url"] = source.base_url
+            if source.extra_config:
+                step_config.update(source.extra_config)
         step_config.update(stage_config.get("params", {}))
 
         step = PipelineStep(
             pipeline_run_id=pipeline.id,
-            stage_order=idx,
+            stage_order=len(actual_stages) + 1,
             stage=stage_def["stage"],
             processor_name=processor_name,
             status="pending",
             config=step_config,
         )
         db.add(step)
+        actual_stages.append(step)
 
+    pipeline.total_stages = len(actual_stages)
     await db.commit()
 
     if _LOCAL_DEV:

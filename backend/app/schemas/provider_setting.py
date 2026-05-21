@@ -31,6 +31,7 @@ class ProviderSettingUpdate(BaseModel):
 
 class ProviderSettingResponse(BaseModel):
     id: UUID | None = None
+    pipeline_type: str = "3d_scene"
     stage: str
     mode: str
     processor_name: str
@@ -43,6 +44,13 @@ class ProviderSettingResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PipelineTypeStageDefinitions(BaseModel):
+    pipeline_type: str
+    label: str
+    stages: list[StageDefinition]
+
+
 class ProviderSettingsListResponse(BaseModel):
     settings: list[ProviderSettingResponse]
-    stage_definitions: list[StageDefinition]
+    defaults: dict[str, str]
+    stage_definitions: list[PipelineTypeStageDefinitions]
