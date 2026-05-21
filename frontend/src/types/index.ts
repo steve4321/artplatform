@@ -107,10 +107,10 @@ export function getLatestVersionDownloadUrl(assetId: string, version: number): s
   return `/api/v1/assets/${assetId}/versions/${version}/download`;
 }
 
-export type AssetType = 'model_3d' | 'texture_2d' | 'animation' | 'material' | 'sprite';
+export type AssetType = 'model_3d' | 'texture_2d' | 'sprite' | 'material' | 'animation_clip' | 'prefab' | 'audio' | 'vfx';
 export type Source = 'ai_generated' | 'manual_upload' | 'hybrid';
 export type State = 'draft' | 'processing' | 'review' | 'approved' | 'rejected' | 'published' | 'deprecated';
-export type PipelineStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+export type PipelineStatus = 'pending' | 'paused' | 'running' | 'completed' | 'partial' | 'failed';
 export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
 export type StylePreset = 'realistic' | 'anime' | 'cartoon' | 'fantasy' | 'sci-fi';
@@ -141,7 +141,7 @@ export interface StageInfo {
 
 export const PIPELINE_STAGES: StageInfo[] = [
   { id: 'text_to_image', name: 'Text→Image', icon: '🖼', status: 'pending' },
-  { id: '3d_generate', name: '3D Generate', icon: '📦', status: 'pending' },
+  { id: 'image_to_3d', name: '3D Generate', icon: '📦', status: 'pending' },
   { id: 'cleanup', name: 'Cleanup', icon: '🧹', status: 'pending' },
   { id: 'uv_material', name: 'UV+Material', icon: '🎨', status: 'pending' },
   { id: 'rig', name: 'Rig', icon: '🦴', status: 'pending' },
