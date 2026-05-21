@@ -14,6 +14,7 @@ export interface StageDefinition {
 
 export interface ProviderSetting {
   id: string | null;
+  pipelineType: string;
   stage: string;
   mode: string;
   processorName: string;
@@ -24,9 +25,16 @@ export interface ProviderSetting {
   updatedAt: string | null;
 }
 
+export interface PipelineTypeStageDefinitions {
+  pipelineType: string;
+  label: string;
+  stages: StageDefinition[];
+}
+
 export interface ProviderSettingsResponse {
   settings: ProviderSetting[];
-  stageDefinitions: StageDefinition[];
+  defaults: Record<string, string>;
+  stageDefinitions: PipelineTypeStageDefinitions[];
 }
 
 export interface ProviderSettingUpdate {
@@ -35,4 +43,9 @@ export interface ProviderSettingUpdate {
   apiKey?: string | null;
   baseUrl?: string | null;
   extraConfig?: Record<string, unknown> | null;
+}
+
+export interface PipelineDefaultUpdate {
+  pipelineType: string;
+  defaultMode: string;
 }

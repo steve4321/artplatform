@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useProviderSettingsStore } from '../stores/providerSettingsStore';
-import type { StageDefinition, ProviderSetting } from '../types/providerSettings';
+import type { StageDefinition, ProviderSetting, PipelineTypeStageDefinitions } from '../types/providerSettings';
 
 const CLOUD_PROVIDER_LABELS: Record<string, string> = {
   stability_ai: 'Stability AI',
@@ -17,10 +17,19 @@ function getCloudProviderLabel(provider: string): string {
   return CLOUD_PROVIDER_LABELS[provider] || provider;
 }
 
+const DEFAULT_MODE_OPTIONS = [
+  { value: 'cloud', label: '全部云端' },
+  { value: 'local', label: '全部本机' },
+  { value: 'mock', label: 'Mock' },
+  { value: 'custom', label: '自定义' },
+];
+
 interface StageCardProps {
   stageDefinition: StageDefinition;
   setting: ProviderSetting | undefined;
+  pipelineDefault: string;
   onSave: (payload: { mode: string; cloudProvider?: string | null; apiKey?: string | null; baseUrl?: string | null }) => void;
+  onDefaultChange: (defaultMode: string) => void;
   isSaving: boolean;
   isSaved: boolean;
 }
@@ -28,7 +37,9 @@ interface StageCardProps {
 function StageCard({
   stageDefinition,
   setting,
+  pipelineDefault,
   onSave,
+  onDefaultChange,
   isSaving,
   isSaved,
 }: StageCardProps) {
@@ -50,10 +61,16 @@ function StageCard({
 
   const selectedMode = stageDefinition.modes.find((m) => m.mode === localMode);
   const isCloudMode = localMode === 'cloud';
+  const isSkipMode = localMode === 'skip';
+  const isDefaultMode = localMode === pipelineDefault;
+  const isOverridden = setting?.mode !== undefined && setting.mode !== pipelineDefault && localMode === pipelineDefault;
 
   const handleModeChange = (newMode: string) => {
     setLocalMode(newMode);
     setDirty(true);
+    if (newMode !== pipelineDefault && pipelineDefault !== 'custom') {
+      onDefaultChange('custom');
+    }
   };
 
   const handleSave = () => {
@@ -75,17 +92,25 @@ function StageCard({
           <h3 className="text-base font-semibold text-gray-100">{stageDefinition.label}</h3>
           <p className="text-sm text-gray-500 mt-0.5">{stageDefinition.description}</p>
         </div>
-        <select
-          value={localMode}
-          onChange={(e) => handleModeChange(e.target.value)}
-          className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-blue-600"
-        >
-          {stageDefinition.modes.map((mode) => (
-            <option key={mode.mode} value={mode.mode}>
-              {mode.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          {isDefaultMode && (
+            <span className="text-xs text-green-400">(默认)</span>
+          )}
+          {isOverridden && (
+            <span className="text-xs text-yellow-400">(已覆盖)</span>
+          )}
+          <select
+            value={localMode}
+            onChange={(e) => handleModeChange(e.target.value)}
+            className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-blue-600"
+          >
+            {stageDefinition.modes.map((mode) => (
+              <option key={mode.mode} value={mode.mode}>
+                {mode.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {isCloudMode && (
@@ -142,7 +167,7 @@ function StageCard({
             <input
               type="text"
               value={baseUrl}
-                onChange={(e) => { setBaseUrl(e.target.value); setDirty(true); }}
+              onChange={(e) => { setBaseUrl(e.target.value); setDirty(true); }}
               placeholder="https://api.example.com"
               className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-600"
             />
@@ -150,7 +175,15 @@ function StageCard({
         </div>
       )}
 
-      {!isCloudMode && (
+      {isSkipMode && (
+        <div className="mt-4 pt-4 border-t border-gray-800">
+          <p className="text-sm text-gray-400">
+            Current: <span className="text-gray-200">{selectedMode?.label || localMode}</span>
+          </p>
+        </div>
+      )}
+
+      {!isCloudMode && !isSkipMode && (
         <div className="mt-4 pt-4 border-t border-gray-800">
           <p className="text-sm text-gray-400">
             Current: <span className="text-gray-200">{selectedMode?.label || localMode}</span>
@@ -182,15 +215,79 @@ function StageCard({
   );
 }
 
+interface PipelineSectionProps {
+  pipelineType: PipelineTypeStageDefinitions;
+  settings: ProviderSetting[];
+  defaults: Record<string, string>;
+  onSave: (pipelineType: string, stage: string, payload: { mode: string; cloudProvider?: string | null; apiKey?: string | null; baseUrl?: string | null }) => void;
+  onDefaultChange: (pipelineType: string, defaultMode: string) => void;
+  saveStatus: Record<string, 'idle' | 'saving' | 'saved'>;
+  isSaving: boolean;
+}
+
+function PipelineSection({
+  pipelineType,
+  settings,
+  defaults,
+  onSave,
+  onDefaultChange,
+  saveStatus,
+  isSaving,
+}: PipelineSectionProps) {
+  const pipelineDefault = defaults[pipelineType.pipelineType] || 'cloud';
+
+  const getSettingForStage = (stage: string): ProviderSetting | undefined => {
+    return settings.find((s) => s.pipelineType === pipelineType.pipelineType && s.stage === stage);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <h3 className="text-lg font-semibold text-gray-100">{pipelineType.label}</h3>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-400">默认模式:</label>
+          <select
+            value={pipelineDefault}
+            onChange={(e) => onDefaultChange(pipelineType.pipelineType, e.target.value)}
+            className="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm focus:outline-none focus:border-blue-600"
+          >
+            {DEFAULT_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-4">
+        {pipelineType.stages.map((stageDef) => (
+          <StageCard
+            key={stageDef.stage}
+            stageDefinition={stageDef}
+            setting={getSettingForStage(stageDef.stage)}
+            pipelineDefault={pipelineDefault}
+            onSave={(payload) => onSave(pipelineType.pipelineType, stageDef.stage, payload)}
+            onDefaultChange={(defaultMode) => onDefaultChange(pipelineType.pipelineType, defaultMode)}
+            isSaving={isSaving}
+            isSaved={saveStatus[`${pipelineType.pipelineType}:${stageDef.stage}`] === 'saved'}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { user } = useAuthStore();
   const {
     settings,
-    stageDefinitions,
+    defaults,
+    pipelineTypeStageDefinitions,
     isLoading,
     error,
     fetchSettings,
     updateSetting,
+    updatePipelineDefault,
   } = useProviderSettingsStore();
 
   const [saveStatus, setSaveStatus] = useState<Record<string, 'idle' | 'saving' | 'saved'>>({});
@@ -199,20 +296,29 @@ function SettingsPage() {
     fetchSettings();
   }, [fetchSettings]);
 
-  const getSettingForStage = (stage: string): ProviderSetting | undefined => {
-    return settings.find((s) => s.stage === stage);
-  };
-
-  const handleSave = async (stage: string, payload: { mode: string; cloudProvider?: string | null; apiKey?: string | null; baseUrl?: string | null }) => {
-    setSaveStatus((prev) => ({ ...prev, [stage]: 'saving' }));
+  const handleSave = async (
+    pipelineType: string,
+    stage: string,
+    payload: { mode: string; cloudProvider?: string | null; apiKey?: string | null; baseUrl?: string | null }
+  ) => {
+    const key = `${pipelineType}:${stage}`;
+    setSaveStatus((prev) => ({ ...prev, [key]: 'saving' }));
     try {
-      await updateSetting(stage, payload);
-      setSaveStatus((prev) => ({ ...prev, [stage]: 'saved' }));
+      await updateSetting(pipelineType, stage, payload);
+      setSaveStatus((prev) => ({ ...prev, [key]: 'saved' }));
       setTimeout(() => {
-        setSaveStatus((prev) => ({ ...prev, [stage]: 'idle' }));
+        setSaveStatus((prev) => ({ ...prev, [key]: 'idle' }));
       }, 2000);
     } catch {
-      setSaveStatus((prev) => ({ ...prev, [stage]: 'idle' }));
+      setSaveStatus((prev) => ({ ...prev, [key]: 'idle' }));
+    }
+  };
+
+  const handleDefaultChange = async (pipelineType: string, defaultMode: string) => {
+    try {
+      await updatePipelineDefault(pipelineType, defaultMode);
+    } catch {
+      // error handled in store
     }
   };
 
@@ -287,15 +393,17 @@ function SettingsPage() {
             <p className="text-red-400">{error}</p>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {stageDefinitions.map((stageDef) => (
-              <StageCard
-                key={stageDef.stage}
-                stageDefinition={stageDef}
-                setting={getSettingForStage(stageDef.stage)}
-                onSave={(payload) => handleSave(stageDef.stage, payload)}
-                isSaving={saveStatus[stageDef.stage] === 'saving'}
-                isSaved={saveStatus[stageDef.stage] === 'saved'}
+          <div className="space-y-8">
+            {pipelineTypeStageDefinitions.map((pipelineType) => (
+              <PipelineSection
+                key={pipelineType.pipelineType}
+                pipelineType={pipelineType}
+                settings={settings}
+                defaults={defaults}
+                onSave={handleSave}
+                onDefaultChange={handleDefaultChange}
+                saveStatus={saveStatus}
+                isSaving={false}
               />
             ))}
           </div>
