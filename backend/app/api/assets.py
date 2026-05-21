@@ -9,7 +9,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import Text, func, select
+from sqlalchemy import Text, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -260,11 +260,18 @@ async def delete_asset(
     _current_user: User = Depends(require_role("admin")),
 ) -> dict[str, str]:
     """Permanently delete an asset and all its versions."""
-    from sqlalchemy import text
-    # UUID stored in SQLite has no dashes
-    asset_id_str = str(asset_id).replace("-", "")
-    await db.execute(text("DELETE FROM asset_versions WHERE asset_id = :asset_id"), {"asset_id": asset_id_str})
-    await db.execute(text("DELETE FROM assets WHERE id = :asset_id"), {"asset_id": asset_id_str})
+    stmt = select(Asset).where(Asset.id == asset_id)
+    result = await db.execute(stmt)
+    asset = result.scalar_one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    # SQLite doesn't enforce FK cascades; delete related pipeline_runs explicitly
+    from app.models.pipeline import PipelineRun
+    pipe_stmt = delete(PipelineRun).where(PipelineRun.asset_id == asset_id)
+    await db.execute(pipe_stmt)
+
+    await db.delete(asset)
     await db.commit()
     return {"deleted": str(asset_id)}
 
@@ -316,7 +323,9 @@ async def get_asset_textures(
 def _get_file_size(storage_key: str) -> int:
     storage = get_storage()
     try:
-        path = storage._resolve_path(storage_key) if hasattr(storage, '_resolve_path') else None
+        path = None
+        if hasattr(storage, '_resolve'):
+            path = storage._resolve(storage_key)
         if path and os.path.isfile(path):
             return os.path.getsize(path)
     except Exception:
