@@ -44,6 +44,18 @@ class VersionSourceType(str, enum.Enum):
     edited = "edited"
 
 
+class VersionStatus(str, enum.Enum):
+    active = "active"
+    pending_review = "pending_review"
+    rejected = "rejected"
+
+
+class VersionLinkType(str, enum.Enum):
+    edited_from = "edited_from"
+    replaces = "replaces"
+    imported_from = "imported_from"
+
+
 VALID_TRANSITIONS: dict[AssetState, set[AssetState]] = {
     AssetState.draft: {AssetState.processing, AssetState.review, AssetState.deprecated},
     AssetState.processing: {AssetState.draft, AssetState.review, AssetState.deprecated},
@@ -95,6 +107,18 @@ class UserBrief(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AssetVersionLinkResponse(BaseModel):
+    id: UUID
+    from_version_id: UUID
+    to_version_id: UUID
+    link_type: VersionLinkType
+    notes: str | None = None
+    created_by: UUID | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class AssetVersionResponse(BaseModel):
     id: UUID
     asset_id: UUID
@@ -105,10 +129,20 @@ class AssetVersionResponse(BaseModel):
     file_size_bytes: int | None = None
     checksum_sha256: str | None = None
     source_type: VersionSourceType
+    status: VersionStatus = VersionStatus.active
     pipeline_run_id: UUID | None = None
     created_at: datetime
+    outgoing_links: list[AssetVersionLinkResponse] = Field(default_factory=list)
+    incoming_links: list[AssetVersionLinkResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+
+class AssetLineageResponse(BaseModel):
+    """Asset lineage: all versions with their inter-version relationships."""
+
+    versions: list[AssetVersionResponse]
+    links: list[AssetVersionLinkResponse]
 
 
 class AssetDependencyResponse(BaseModel):

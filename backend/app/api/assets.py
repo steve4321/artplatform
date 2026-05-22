@@ -8,7 +8,7 @@ import uuid
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import Text, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,15 +16,17 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.storage import get_storage
-from app.models import Asset, AssetVersion, PipelineStep, User
+from app.models import Asset, AssetVersion, AssetVersionLink, PipelineStep, User
 from app.schemas.asset import (
     AssetCreate,
+    AssetLineageResponse,
     AssetListResponse,
     AssetResponse,
     AssetState,
     AssetStateUpdate,
     AssetType,
     AssetUpdate,
+    AssetVersionLinkResponse,
     AssetVersionResponse,
 )
 
@@ -196,17 +198,41 @@ async def upload_version(
     asset_id: UUID,
     file: Annotated[UploadFile, File(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     source_type: str = "manual_upload",
+    source_version_id: UUID | None = Form(None),
+    edit_notes: str | None = Form(None),
 ) -> AssetVersionResponse:
     """Upload a new file version for an asset.
 
-    Streams the file to MinIO without buffering the entire payload in memory.
-    Computes SHA-256 checksum during upload for integrity verification.
+    If source_version_id is provided, the new version is marked as
+    pending_review and linked to the source version via AssetVersionLink.
+    Otherwise, the version is immediately active and becomes the current version.
     """
     asset = await _load_asset_or_404(db, asset_id)
 
+    if source_version_id is not None:
+        src_stmt = select(AssetVersion).where(AssetVersion.id == source_version_id)
+        src_result = await db.execute(src_stmt)
+        src_version = src_result.scalar_one_or_none()
+        if src_version is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Source version not found",
+            )
+        src_asset_stmt = select(Asset).where(Asset.id == src_version.asset_id)
+        src_asset_result = await db.execute(src_asset_stmt)
+        src_asset = src_asset_result.scalar_one_or_none()
+        if src_asset is None or src_asset.team_id != asset.team_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Source version not accessible in this team",
+            )
+        source_type = "edited"
+
     version_number = asset.current_version + 1
+    version_status = "pending_review" if source_version_id else "active"
+
     ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
     storage_key = f"assets/{asset_id}/v{version_number}/{uuid.uuid4()}.{ext}"
 
@@ -223,13 +249,60 @@ async def upload_version(
         file_size_bytes=len(content),
         checksum_sha256=checksum,
         source_type=source_type,
+        status=version_status,
     )
     db.add(version)
 
-    asset.current_version = version_number
+    if not source_version_id:
+        asset.current_version = version_number
+    else:
+        # Flush to get version.id before using it in the link
+        await db.flush()
+        link = AssetVersionLink(
+            from_version_id=version.id,
+            to_version_id=source_version_id,
+            link_type="edited_from",
+            notes=edit_notes,
+            created_by=current_user.id,
+        )
+        db.add(link)
+
     await db.commit()
-    await db.refresh(version)
+
+    stmt = (
+        select(AssetVersion)
+        .where(AssetVersion.id == version.id)
+        .options(
+            selectinload(AssetVersion.outgoing_links),
+            selectinload(AssetVersion.incoming_links),
+        )
+    )
+    result = await db.execute(stmt)
+    version = result.scalar_one()
     return AssetVersionResponse.model_validate(version)
+
+
+@router.get("/{asset_id}/lineage", response_model=AssetLineageResponse)
+async def get_asset_lineage(
+    asset_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AssetLineageResponse:
+    """Get all versions and their inter-version relationships for an asset."""
+    asset = await _load_asset_or_404(db, asset_id)
+
+    versions = asset.versions
+
+    link_stmt = select(AssetVersionLink).where(
+        AssetVersionLink.from_version_id.in_([v.id for v in versions])
+        | AssetVersionLink.to_version_id.in_([v.id for v in versions])
+    )
+    link_result = await db.execute(link_stmt)
+    links = link_result.scalars().all()
+
+    return AssetLineageResponse(
+        versions=[AssetVersionResponse.model_validate(v) for v in versions],
+        links=[AssetVersionLinkResponse.model_validate(l) for l in links],
+    )
 
 
 @router.get("/{asset_id}/versions/{version}/download")
