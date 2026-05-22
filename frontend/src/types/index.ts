@@ -14,6 +14,16 @@ export interface UserBrief {
   email: string;
 }
 
+export interface AssetVersionLink {
+  id: string;
+  fromVersionId: string;
+  toVersionId: string;
+  linkType: 'edited_from' | 'replaces' | 'imported_from';
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
 export interface AssetVersion {
   id: string;
   assetId: string;
@@ -24,8 +34,16 @@ export interface AssetVersion {
   fileSizeBytes: number | null;
   checksumSha256: string | null;
   sourceType: string;
+  status: 'active' | 'pending_review' | 'rejected';
   pipelineRunId: string | null;
   createdAt: string;
+  outgoingLinks?: AssetVersionLink[];
+  incomingLinks?: AssetVersionLink[];
+}
+
+export interface AssetLineage {
+  versions: AssetVersion[];
+  links: AssetVersionLink[];
 }
 
 export interface AssetDependency {

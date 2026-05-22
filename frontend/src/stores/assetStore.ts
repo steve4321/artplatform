@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import client from '../api/client';
-import type { Asset, AssetVersion } from '../types';
+import type { Asset, AssetLineage, AssetVersion } from '../types';
 
-export type { Asset, AssetVersion };
+export type { Asset, AssetLineage, AssetVersion };
 
 export type AssetType = 'model_3d' | 'texture_2d' | 'animation' | 'material' | 'sprite';
 export type Source = 'ai_generated' | 'manual_upload' | 'hybrid';
@@ -28,8 +28,9 @@ interface AssetState {
   setPage: (page: number) => void;
   resetFilters: () => void;
   createAsset: (payload: { name: string; description?: string; assetType: AssetType; tags?: string[] }) => Promise<Asset>;
-  uploadVersion: (assetId: string, file: File) => Promise<AssetVersion>;
+  uploadVersion: (assetId: string, file: File, sourceVersionId?: string, editNotes?: string) => Promise<AssetVersion>;
   getDownloadUrl: (assetId: string, version: number) => string;
+  fetchLineage: (assetId: string) => Promise<AssetLineage>;
   submitForReview: (assetId: string) => Promise<void>;
   deleteAsset: (assetId: string) => Promise<void>;
 }
@@ -107,9 +108,15 @@ export const useAssetStore = create<AssetState>((set, get) => ({
     return response.data;
   },
 
-  uploadVersion: async (assetId: string, file: File) => {
+  uploadVersion: async (assetId: string, file: File, sourceVersionId?: string, editNotes?: string) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (sourceVersionId) {
+      formData.append('source_version_id', sourceVersionId);
+    }
+    if (editNotes) {
+      formData.append('edit_notes', editNotes);
+    }
 
     const response = await client.post(`/api/v1/assets/${assetId}/versions`, formData, {
       headers: {
@@ -121,6 +128,11 @@ export const useAssetStore = create<AssetState>((set, get) => ({
 
   getDownloadUrl: (assetId: string, version: number) => {
     return `/api/v1/assets/${assetId}/versions/${version}/download`;
+  },
+
+  fetchLineage: async (assetId: string) => {
+    const response = await client.get(`/api/v1/assets/${assetId}/lineage`);
+    return response.data;
   },
 
   submitForReview: async (assetId: string) => {
