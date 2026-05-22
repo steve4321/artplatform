@@ -11,12 +11,14 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 _SOURCE_TYPES = ("ai_pipeline", "manual_upload", "edited")
+_VERSION_STATUSES = ("active", "pending_review", "rejected")
 
 
 class AssetVersion(Base):
@@ -51,12 +53,35 @@ class AssetVersion(Base):
         ),
         nullable=False,
     )
+    status: Mapped[str] = mapped_column(
+        Text,
+        CheckConstraint(
+            f"status IN {repr(_VERSION_STATUSES)}",
+            name="ck_asset_versions_status",
+        ),
+        nullable=False,
+        server_default=text("'active'"),
+    )
     pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     asset: Mapped["Asset"] = relationship(  # noqa: F821
         back_populates="versions", lazy="selectin",
     )
+    outgoing_links: Mapped[list["AssetVersionLink"]] = relationship(  # noqa: F821
+        "AssetVersionLink",
+        foreign_keys="AssetVersionLink.from_version_id",
+        back_populates="from_version",
+        lazy="selectin",
+        viewonly=True,
+    )
+    incoming_links: Mapped[list["AssetVersionLink"]] = relationship(  # noqa: F821
+        "AssetVersionLink",
+        foreign_keys="AssetVersionLink.to_version_id",
+        back_populates="to_version",
+        lazy="selectin",
+        viewonly=True,
+    )
 
     def __repr__(self) -> str:
-        return f"<AssetVersion {self.id} v{self.version}>"
+        return f"<AssetVersion {self.id} v{self.version} [{self.status}]>"

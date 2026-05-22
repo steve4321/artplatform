@@ -2,6 +2,7 @@ from app.models.artifact import Artifact
 from app.models.asset import Asset
 from app.models.asset_dependency import AssetDependency
 from app.models.asset_version import AssetVersion
+from app.models.asset_version_link import AssetVersionLink
 from app.models.pipeline import PipelineRun, PipelineStep
 from app.models.pipeline_default import PipelineDefault
 from app.models.provider_setting import ProviderSetting
@@ -14,6 +15,7 @@ __all__ = [
     "Asset",
     "AssetDependency",
     "AssetVersion",
+    "AssetVersionLink",
     "PipelineRun",
     "PipelineStep",
     "PipelineDefault",
