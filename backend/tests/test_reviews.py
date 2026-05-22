@@ -2,6 +2,7 @@ import io
 import uuid
 
 import pytest
+import pytest_asyncio
 
 
 async def _create_asset_with_version(client, auth_headers):
@@ -109,3 +110,41 @@ async def test_list_reviews_asset_not_found(client, auth_headers):
         headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+@pytest_asyncio.fixture
+async def artist_headers(client, auth_headers):
+    tag = uuid.uuid4().hex[:8]
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"artist_{tag}@test.local",
+            "password": "testpass123",
+            "display_name": "Test Artist",
+            "role": "artist",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": f"artist_{tag}@test.local", "password": "testpass123"},
+    )
+    token = login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_submit_review_non_admin(client, auth_headers, artist_headers):
+    asset_id = await _create_asset_with_version(client, auth_headers)
+    resp = await client.post(
+        "/api/v1/reviews",
+        json={
+            "asset_id": asset_id,
+            "version": 2,
+            "decision": "approved",
+        },
+        headers=artist_headers,
+    )
+    assert resp.status_code == 403
+    assert "permission" in resp.json()["detail"].lower()

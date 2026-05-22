@@ -1,4 +1,7 @@
+import uuid
+
 import pytest
+import pytest_asyncio
 
 from app.core.seed import DEFAULT_TEAM_ID
 
@@ -60,3 +63,36 @@ async def test_get_team_not_found(client, auth_headers):
         headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+@pytest_asyncio.fixture
+async def artist_headers(client, auth_headers):
+    tag = uuid.uuid4().hex[:8]
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"artist_{tag}@test.local",
+            "password": "testpass123",
+            "display_name": "Test Artist",
+            "role": "artist",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": f"artist_{tag}@test.local", "password": "testpass123"},
+    )
+    token = login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_create_team_non_admin(client, artist_headers):
+    resp = await client.post(
+        "/api/v1/teams",
+        json={"name": "Rogue Team"},
+        headers=artist_headers,
+    )
+    assert resp.status_code == 403
+    assert "permission" in resp.json()["detail"].lower()
