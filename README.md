@@ -139,6 +139,22 @@ pip install -e ".[mcp]"
 
 MCP 提供 9 个工具：`generate_3d_asset`、`list_assets`、`get_asset`、`update_asset`、`upload_asset_version`、`export_asset`、`submit_review`、`run_pipeline`、`get_pipeline_status`。
 
+### 6. 本地 AI 模型依赖（可选）
+
+接入真实 AI 模型时，需要克隆推理仓库到 `backend/.local_libs/`：
+
+```bash
+cd backend/.local_libs
+
+# TripoSR — 图生 3D 模型
+git clone https://github.com/VAST-AI-Research/TripoSR.git
+
+# OpenLRM — 图生 3D 备选模型
+git clone https://github.com/3DTopia/OpenLRM.git
+```
+
+> `LOCAL_DEV=true` 模式下全部使用 Mock 处理器，不需要这些依赖。仅在使用真实 GPU 推理时需要。
+
 ## 部署方案
 
 ### 方案一：本地开发模式（当前支持）

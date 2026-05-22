@@ -1,0 +1,19 @@
+# AI model repos (cloned separately, see README)
+backend/.local_libs/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Sisyphus work plans
+.sisyphus/
+
+# Ruff
+.ruff_cache/
+backend/.ruff_cache/
+
+# Frontend test artifacts
+frontend/playwright-report/
+frontend/test-results/
+
+# MSW generated file
+frontend/public/mockServiceWorker.js

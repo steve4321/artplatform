@@ -34,3 +34,6 @@ Thumbs.db
 
 # Local development (SQLite + filesystem storage)
 .local_dev/
+
+# Ruff
+.ruff_cache/
