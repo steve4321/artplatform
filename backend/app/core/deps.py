@@ -56,3 +56,11 @@ def require_role(*roles: str):
         return user
 
     return _check
+
+
+def require_admin():
+    return require_role("admin")
+
+
+def require_editor():
+    return require_role("admin", "artist")

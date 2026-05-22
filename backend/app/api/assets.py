@@ -63,13 +63,17 @@ async def list_assets(
     search: str | None = Query(None, description="Search by name (ILIKE)"),
     include_all: bool = Query(False, description="Include draft/review/rejected assets"),
 ) -> AssetListResponse:
-    """List assets with optional filtering and pagination."""
+    """List assets with optional filtering and pagination (team-scoped)."""
     base = select(Asset).options(
         selectinload(Asset.versions),
         selectinload(Asset.dependencies),
         selectinload(Asset.creator),
     )
     count_stmt = select(func.count()).select_from(Asset)
+
+    if current_user.role != "admin" and current_user.team_id is not None:
+        base = base.where(Asset.team_id == current_user.team_id)
+        count_stmt = count_stmt.where(Asset.team_id == current_user.team_id)
 
     if state is not None:
         base = base.where(Asset.state == state.value)
@@ -148,10 +152,15 @@ async def update_asset(
     asset_id: UUID,
     payload: AssetUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> AssetResponse:
-    """Partially update an asset."""
+    """Partially update an asset (owner or admin only)."""
     asset = await _load_asset_or_404(db, asset_id)
+    if current_user.role != "admin" and asset.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to update this asset",
+        )
     update_data = payload.model_dump(exclude_unset=True, by_alias=False)
     for field, value in update_data.items():
         setattr(asset, field, value)
