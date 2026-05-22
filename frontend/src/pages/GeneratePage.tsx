@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AssetViewer } from '../components/viewer';
 import { usePipelineStore, PipelineStep } from '../stores/pipelineStore';
+import { useAuthStore } from '../stores/authStore';
 import type { StylePreset, QualityLevel, PipelineType, UsageType, OutputSize, OutputFormat } from '../types';
 
 type StageConfig = {
@@ -282,6 +283,7 @@ function ConfigPanel3D({
   isBusy,
   referenceFile,
   onReferenceFileChange,
+  viewerMode = false,
 }: {
   prompt: string;
   onPromptChange: (v: string) => void;
@@ -294,7 +296,8 @@ function ConfigPanel3D({
   onGenerate: () => void;
   isBusy: boolean;
   referenceFile: File | null;
-  onReferenceFileChange: (file: File | null) => void;
+  onReferenceFileChange: (f: File | null) => void;
+  viewerMode?: boolean;
 }) {
   const [showNegative, setShowNegative] = useState(false);
 
@@ -417,10 +420,12 @@ function ConfigPanel3D({
 
       <button
         onClick={onGenerate}
-        disabled={prompt.length < 10 || isBusy}
+        disabled={prompt.length < 10 || isBusy || viewerMode}
         className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
       >
-        {isBusy ? (
+        {viewerMode ? (
+          'View Only'
+        ) : isBusy ? (
           <>
             <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             Generating…
@@ -461,6 +466,7 @@ function ConfigPanel2D({
   onOutputFormatChange,
   onGenerate,
   isBusy,
+  viewerMode = false,
 }: {
   prompt: string;
   onPromptChange: (v: string) => void;
@@ -478,6 +484,7 @@ function ConfigPanel2D({
   onOutputFormatChange: (v: OutputFormat) => void;
   onGenerate: () => void;
   isBusy: boolean;
+  viewerMode?: boolean;
 }) {
   const [showNegative, setShowNegative] = useState(false);
 
@@ -625,10 +632,12 @@ function ConfigPanel2D({
 
       <button
         onClick={onGenerate}
-        disabled={prompt.length < 10 || isBusy}
+        disabled={prompt.length < 10 || isBusy || viewerMode}
         className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
       >
-        {isBusy ? (
+        {viewerMode ? (
+          'View Only'
+        ) : isBusy ? (
           <>
             <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             Generating…
@@ -941,6 +950,8 @@ function ResourceTypeSwitcher({
 
 /* ─── Main Page ─── */
 export default function GeneratePage() {
+  const currentUser = useAuthStore((s) => s.user);
+  const viewerMode = currentUser?.role === 'viewer';
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
   const [stylePreset, setStylePreset] = useState<StylePreset>('realistic');
@@ -1165,6 +1176,7 @@ export default function GeneratePage() {
               onQualityChange={setQuality}
               onGenerate={handleGenerate}
               isBusy={isBusy}
+              viewerMode={viewerMode}
               referenceFile={referenceFile}
               onReferenceFileChange={setReferenceFile}
             />
@@ -1186,6 +1198,7 @@ export default function GeneratePage() {
               onOutputFormatChange={setOutputFormat}
               onGenerate={handleGenerate}
               isBusy={isBusy}
+              viewerMode={viewerMode}
             />
           )}
         </div>

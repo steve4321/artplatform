@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import client from '../api/client';
 import { useAssetStore, Asset } from '../stores/assetStore';
+import { useAuthStore, isAdmin, canEdit } from '../stores/authStore';
 import { AssetGrid, AssetFilters } from '../components/assets';
 import { AssetViewer } from '../components/viewer';
 
@@ -19,6 +20,9 @@ function AssetDetailModal({
   onClose: () => void;
   onAssetUpdated?: (asset: Asset) => void;
 }) {
+  const currentUser = useAuthStore((s) => s.user);
+  const userIsAdmin = isAdmin(currentUser?.role);
+  const userCanEdit = canEdit(currentUser?.role);
   const [activeTab, setActiveTab] = useState<'preview' | 'details'>('preview');
   const { getDownloadUrl, submitForReview, deleteAsset, uploadVersion } = useAssetStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -410,15 +414,17 @@ function AssetDetailModal({
                   </svg>
                   Download (presigned)
                 </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
-                >
-                  {isDeleting ? 'Deleting...' : 'Delete'}
-                </button>
+                {userIsAdmin && (
+                  <button
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {isDeleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                )}
                 {deleteError && <span className="text-red-400 text-xs">{deleteError}</span>}
-                {asset.state === 'draft' && (
+                {userCanEdit && asset.state === 'draft' && (
                   <button
                     onClick={handleSubmitForReview}
                     disabled={isSubmitting}
@@ -429,6 +435,7 @@ function AssetDetailModal({
                 )}
               </div>
 
+              {userCanEdit && (
               <div className="mt-6 border-t border-gray-800 pt-6">
                 <button
                   onClick={() => setShowUploadSection(!showUploadSection)}
@@ -516,6 +523,7 @@ function AssetDetailModal({
                   </div>
                 )}
               </div>
+              )}
 
               {textures.length > 0 && (
                 <div className="mt-6">

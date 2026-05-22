@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle, createRef, useMemo } from 'react';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore, isAdmin as checkAdmin } from '../stores/authStore';
 import { useProviderSettingsStore } from '../stores/providerSettingsStore';
 import client from '../api/client';
 import type { StageDefinition, ProviderSetting, PipelineTypeStageDefinitions } from '../types/providerSettings';
@@ -322,6 +322,7 @@ interface PipelineSectionProps {
   onDefaultChange: (pipelineType: string, defaultMode: string) => void;
   onBatchSaveStage: (pipelineType: string, stage: string, payload: Record<string, unknown>) => Promise<void>;
   onBatchRefresh: () => Promise<void>;
+  isAdmin: boolean;
 }
 
 function PipelineSection({
@@ -331,6 +332,7 @@ function PipelineSection({
   onDefaultChange,
   onBatchSaveStage,
   onBatchRefresh,
+  isAdmin,
 }: PipelineSectionProps) {
   const pipelineDefault = defaults[pipelineType.pipelineType] || 'custom';
   const [localDefault, setLocalDefault] = useState(pipelineDefault);
@@ -441,13 +443,15 @@ function PipelineSection({
               </option>
             ))}
           </select>
-          <button
-            onClick={handleSaveAll}
-            disabled={!isDefaultDirty || savingDefault}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            {savingDefault ? '保存中...' : '保存'}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={handleSaveAll}
+              disabled={!isDefaultDirty || savingDefault}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {savingDefault ? '保存中...' : '保存'}
+            </button>
+          )}
           {savedDefault && (
             <span className="text-sm text-green-400 flex items-center gap-1">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -602,6 +606,7 @@ function SettingsPage() {
                 onDefaultChange={handleDefaultChange}
                 onBatchSaveStage={handleBatchSaveStage}
                 onBatchRefresh={handleBatchRefresh}
+                isAdmin={checkAdmin(user?.role)}
               />
             ))}
           </div>

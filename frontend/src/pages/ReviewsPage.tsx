@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import client from '../api/client';
+import { useAuthStore } from '../stores/authStore';
 import type { Asset } from '../types';
 
 const AssetViewer = lazy(() => import('../components/viewer/AssetViewer'));
@@ -29,6 +30,8 @@ function useAssetTextures() {
 }
 
 function ReviewsPage() {
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
@@ -188,27 +191,31 @@ function ReviewsPage() {
                     </div>
                   )}
                   <div className="flex flex-wrap gap-3 mt-4">
-                    <button
-                      onClick={() => handleReview(asset.id, 'approved')}
-                      disabled={submitting === asset.id}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-                    >
-                      {submitting === asset.id ? 'Submitting...' : 'Approve'}
-                    </button>
-                    <button
-                      onClick={() => handleReview(asset.id, 'rejected')}
-                      disabled={submitting === asset.id}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => handleReview(asset.id, 'changes_requested')}
-                      disabled={submitting === asset.id}
-                      className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm font-medium rounded-lg border border-gray-700 transition-colors"
-                    >
-                      Request Changes
-                    </button>
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => handleReview(asset.id, 'approved')}
+                          disabled={submitting === asset.id}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          {submitting === asset.id ? 'Submitting...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleReview(asset.id, 'rejected')}
+                          disabled={submitting === asset.id}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => handleReview(asset.id, 'changes_requested')}
+                          disabled={submitting === asset.id}
+                          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm font-medium rounded-lg border border-gray-700 transition-colors"
+                        >
+                          Request Changes
+                        </button>
+                      </>
+                    )}
                     <div className="flex gap-2 ml-auto items-center">
                       <button
                         onClick={() => handleDownloadGlb(asset)}
