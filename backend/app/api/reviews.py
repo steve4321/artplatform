@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models import Asset, Review, User
+from app.models import Asset, AssetVersion, Review, User
 from app.schemas.review import ReviewCreate, ReviewListResponse, ReviewResponse
 
 router = APIRouter(tags=["reviews"])
@@ -30,8 +30,9 @@ async def submit_review(
 ) -> ReviewResponse:
     """Submit a review for an asset version.
 
-    The reviewer identity is derived from the request context (stubbed as
-    a default user ID until auth is implemented).
+    When approved: the version status becomes active and becomes the
+    asset's current version.
+    When rejected: the version status becomes rejected.
     """
     stmt = select(Asset).where(Asset.id == payload.asset_id)
     result = await db.execute(stmt)
@@ -39,11 +40,24 @@ async def submit_review(
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    if payload.version < 1 or payload.version > asset.current_version:
+    version_stmt = select(AssetVersion).where(
+        AssetVersion.asset_id == payload.asset_id,
+        AssetVersion.version == payload.version,
+    )
+    version_result = await db.execute(version_stmt)
+    version = version_result.scalar_one_or_none()
+    if version is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Version {payload.version} does not exist for this asset",
         )
+
+    if payload.decision.value == "approved":
+        version.status = "active"
+        if payload.version > asset.current_version:
+            asset.current_version = payload.version
+    elif payload.decision.value == "rejected":
+        version.status = "rejected"
 
     review = Review(
         asset_id=payload.asset_id,
