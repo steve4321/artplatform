@@ -62,3 +62,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 }));
+
+// ── Role-check helpers (use via selector in components) ──────────────
+
+export function isAdmin(role: string | undefined): boolean {
+  return role === 'admin';
+}
+
+export function canEdit(role: string | undefined): boolean {
+  return role === 'admin' || role === 'artist';
+}
